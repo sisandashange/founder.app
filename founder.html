@@ -1,0 +1,760 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#0f172a">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="robots" content="noindex, nofollow">
+<title>BOOK.NOW | Founder Dashboard</title>
+<link rel="icon" href="icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/@phosphor-icons/web@2.1.1" defer></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+
+<style>
+:root{--primary:#172033;--accent:#2563eb;--accent-light:#eff6ff;--bg:#f7f8fa;--text:#172033;--muted:#667085;--border:#e7eaf0;--success:#16834a;--success-bg:#ecfdf3;--warning:#a86405;--warning-bg:#fff8e6;--danger:#b42318;--danger-bg:#fff1f0;--radius:16px;--shadow:0 2px 8px rgba(16,24,40,.025)}
+*{box-sizing:border-box;font-family:'Plus Jakarta Sans',sans-serif;-webkit-tap-highlight-color:transparent}
+body{margin:0;background:var(--bg);color:var(--text);padding-bottom:32px}
+button,input,select{font:inherit}
+button{cursor:pointer}
+button:disabled{opacity:.55;cursor:not-allowed}
+.hidden{display:none!important}
+a{color:var(--accent);font-weight:700;overflow-wrap:anywhere}
+button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid #bfdbfe;outline-offset:2px}
+#auth-screen{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
+.auth-card{background:#fff;padding:30px;border-radius:22px;border:1px solid var(--border);width:100%;max-width:400px;box-shadow:0 12px 40px rgba(16,24,40,.06)}
+.auth-title{text-align:center;font-size:23px;font-weight:800;margin-bottom:7px;letter-spacing:-.7px}
+.auth-sub{text-align:center;font-size:13px;color:var(--muted);margin-bottom:24px;line-height:1.6}
+.top-nav{background:#fff;padding:15px 22px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;z-index:20;gap:12px}
+.brand{font-size:15px;font-weight:800;display:flex;align-items:center;gap:9px;color:var(--primary);letter-spacing:-.3px}
+.brand i{font-size:23px;color:var(--accent)}
+.nav-right{display:flex;align-items:center;gap:12px}
+.container{padding:25px 20px;max-width:1120px;margin:auto}
+.page-heading{margin-bottom:23px}
+.page-heading h1{font-size:28px;letter-spacing:-1.1px;margin:0 0 7px}
+.page-heading p{margin:0;color:var(--muted);font-size:13px;line-height:1.6}
+.account-label{font-size:11px;color:var(--muted);background:#f1f5f9;border-radius:20px;padding:7px 10px;white-space:nowrap}
+#global-message{font-size:12px;color:var(--muted);margin:0 0 16px;line-height:1.5}
+.stats-container{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin-bottom:23px}
+.stat-box{background:#fff;padding:19px;border-radius:var(--radius);border:1px solid var(--border);min-width:0;box-shadow:var(--shadow)}
+.stat-top{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.stat-header{font-size:12px;font-weight:600;color:var(--muted);line-height:1.5}
+.stat-icon{width:34px;height:34px;display:flex;align-items:center;justify-content:center;border-radius:10px;background:var(--accent-light);color:var(--accent);font-size:18px;flex-shrink:0}
+.stat-value{font-size:28px;font-weight:800;letter-spacing:-1px;margin-top:13px;overflow-wrap:anywhere}
+.stat-caption{font-size:11px;color:var(--muted);margin-top:4px;line-height:1.5}
+.nav-tabs{display:flex;gap:5px;background:#edf0f5;padding:5px;border-radius:12px;margin-bottom:23px;overflow-x:auto}
+.tab-item{flex:1;min-width:max-content;padding:11px 14px;border:0;background:transparent;font-size:12px;font-weight:700;color:#667085;border-radius:9px;text-align:center;white-space:nowrap}
+.tab-item.active{background:#fff;color:var(--text);box-shadow:0 1px 4px rgba(16,24,40,.09)}
+.section-head{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:16px}
+.section-head h2{font-size:18px;letter-spacing:-.5px;margin:0}
+.section-description{font-size:12px;color:var(--muted);margin-top:5px;line-height:1.6}
+.sub-heading{font-size:15px;font-weight:800;margin:28px 0 12px;letter-spacing:-.3px}
+.btn{border:1px solid var(--border);background:#fff;color:var(--text);padding:10px 13px;border-radius:10px;font-size:12px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;gap:7px;white-space:nowrap}
+.btn:hover{background:#f8fafc}
+.btn-primary{background:var(--accent);color:#fff;border-color:var(--accent)}
+.btn-primary:hover{background:#1d4ed8}
+.btn-success{background:var(--success);border-color:var(--success);color:#fff}
+.btn-danger{background:var(--danger);border-color:var(--danger);color:#fff}
+.btn-logout{background:#fff1f0;color:#a62b25;border-color:#ffe0de}
+.card-list{display:flex;flex-direction:column;gap:12px}
+.vendor-card,.order-card,.admin-card{background:#fff;padding:20px;border-radius:var(--radius);border:1px solid var(--border);overflow-wrap:anywhere;box-shadow:var(--shadow)}
+.vendor-top,.order-top{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;margin-bottom:12px}
+.vendor-title,.order-title{font-weight:800;font-size:14px;line-height:1.5}
+.vendor-meta,.order-time{font-size:12px;color:var(--muted);margin-top:6px;line-height:1.65;overflow-wrap:anywhere}
+.order-price{font-weight:800;color:var(--success);font-size:17px;text-align:right;line-height:1.5}
+.price-note{font-size:11px;font-weight:500;color:var(--muted);max-width:210px;text-align:right;line-height:1.5;margin-top:4px}
+.status-badge{padding:5px 9px;border-radius:7px;font-size:10px;font-weight:800;display:inline-block;overflow-wrap:anywhere;letter-spacing:.2px}
+.status-active,.status-approved,.status-completed,.status-confirmed,.status-paid{background:var(--success-bg);color:var(--success)}
+.status-pending,.status-pending_approval,.status-pending_payment,.status-unpaid{background:var(--warning-bg);color:var(--warning)}
+.status-rejected,.status-expired,.status-cancelled,.status-failed{background:var(--danger-bg);color:var(--danger)}
+.ref-pill{background:#eff6ff;color:#245bb5;font-family:monospace;font-size:11px;font-weight:800;padding:5px 8px;border-radius:7px;border:1px solid #dbeafe;display:inline-block;margin-top:8px;overflow-wrap:anywhere}
+.form-field{margin-bottom:15px}
+.form-field label{display:block;font-size:12px;font-weight:700;color:#475467;margin-bottom:7px}
+.form-field input,.form-field select,.search-input{width:100%;padding:12px;border-radius:10px;border:1px solid #dfe3ea;font-size:13px;background:#fff;color:var(--text);min-width:0}
+.empty-box{text-align:center;padding:30px 16px;background:#fff;border-radius:14px;border:1px dashed #d9dee8;color:var(--muted);font-size:12px;line-height:1.7;white-space:pre-wrap;overflow-wrap:anywhere}
+.notice{padding:13px 15px;border-radius:11px;background:#eff6ff;color:#244c94;font-size:12px;line-height:1.7;margin-bottom:15px}
+.error-box{padding:13px 15px;border-radius:11px;background:var(--danger-bg);color:#991b1b;font-size:12px;line-height:1.7;margin-bottom:12px;overflow-wrap:anywhere;white-space:pre-wrap}
+.success-box{padding:13px 15px;border-radius:11px;background:var(--success-bg);color:#166534;font-size:12px;line-height:1.7;margin-bottom:12px;overflow-wrap:anywhere}
+.actions{background:#f8fafc;padding:12px;border-radius:10px;display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:9px;margin-top:13px}
+.actions-buttons{display:flex;gap:8px;flex-wrap:wrap}
+.small-note{font-size:11px;color:var(--muted);line-height:1.6;overflow-wrap:anywhere}
+.analytics-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:0 0 20px}
+.analytics-card{background:#fff;border:1px solid var(--border);border-radius:13px;padding:15px}
+.analytics-label{font-size:11px;color:var(--muted);font-weight:600;line-height:1.5}
+.analytics-value{font-size:22px;font-weight:800;margin-top:8px;letter-spacing:-.6px}
+.filters{display:grid;grid-template-columns:minmax(0,1fr) minmax(145px,200px);gap:10px;margin-bottom:15px}
+@media(max-width:760px){
+  .container{padding:20px 14px}.top-nav{padding:13px 14px}
+  .stats-container{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+  .stat-box{padding:15px}.stat-value{font-size:25px}
+  .analytics-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .page-heading h1{font-size:25px}
+}
+@media(max-width:480px){
+  .brand{font-size:12px;gap:6px}.btn{padding:9px 10px;font-size:11px}
+  .vendor-card,.order-card,.admin-card{padding:15px}
+  .vendor-top,.order-top{flex-direction:column}
+  .order-price,.price-note{text-align:left;max-width:100%}
+  .filters{grid-template-columns:1fr}
+  .actions{align-items:stretch}.actions-buttons{width:100%}.actions-buttons .btn{flex:1}
+  .stat-value{font-size:24px}.tab-item{padding:10px 12px}
+}
+</style>
+</head>
+
+<body>
+<div id="auth-screen">
+  <div class="auth-card">
+    <div class="brand" style="justify-content:center;margin-bottom:20px"><i class="ph ph-shield-check"></i> BOOK.NOW</div>
+    <div class="auth-title">Founder Login</div>
+    <div class="auth-sub">Sign in with the authorised founder account to manage your platform.</div>
+    <div id="startup-message" class="error-box hidden" role="alert"></div>
+    <form id="admin-login-form">
+      <div class="form-field"><label for="admin-email">Email address</label><input type="email" id="admin-email" autocomplete="username" placeholder="you@gmail.com" required></div>
+      <div class="form-field"><label for="admin-password">Password</label><input type="password" id="admin-password" autocomplete="current-password" placeholder="Your password" required></div>
+      <button type="submit" class="btn btn-primary" id="admin-login-btn" style="width:100%;padding:13px">Sign in to dashboard</button>
+    </form>
+    <div id="login-message" class="small-note" role="status" aria-live="polite" style="margin-top:13px"></div>
+  </div>
+</div>
+
+<div id="admin-dashboard" class="hidden">
+  <header class="top-nav">
+    <div class="brand"><i class="ph ph-shield-check"></i> BOOK.NOW Founder</div>
+    <div class="nav-right">
+      <span class="account-label">Founder account</span>
+      <button class="btn btn-logout" id="admin-logout-btn">Log out <i class="ph ph-sign-out"></i></button>
+    </div>
+  </header>
+
+  <main class="container">
+    <div class="page-heading">
+      <h1>Founder Dashboard</h1>
+      <p>Manage shops, subscriptions, payments and customer bookings.</p>
+    </div>
+
+    <div id="global-message" role="status" aria-live="polite">Loading dashboard…</div>
+
+    <div class="stats-container">
+      <div class="stat-box"><div class="stat-top"><div class="stat-header">Registered shops</div><div class="stat-icon"><i class="ph ph-storefront"></i></div></div><div class="stat-value" id="stat-shops">—</div><div class="stat-caption">Shops registered on the platform</div></div>
+      <div class="stat-box"><div class="stat-top"><div class="stat-header">Pending payment requests</div><div class="stat-icon"><i class="ph ph-receipt"></i></div></div><div class="stat-value" id="stat-pending">—</div><div class="stat-caption">Require founder review</div></div>
+      <div class="stat-box"><div class="stat-top"><div class="stat-header">Active subscriptions</div><div class="stat-icon"><i class="ph ph-check-circle"></i></div></div><div class="stat-value" id="stat-active">—</div><div class="stat-caption">Active and not expired</div></div>
+      <div class="stat-box"><div class="stat-top"><div class="stat-header">Customer bookings</div><div class="stat-icon"><i class="ph ph-calendar-check"></i></div></div><div class="stat-value" id="stat-orders">—</div><div class="stat-caption">Total records in bookings</div></div>
+    </div>
+
+    <nav class="nav-tabs" aria-label="Founder dashboard sections">
+      <button class="tab-item active" data-tab="vendors-section">Shops &amp; approvals</button>
+      <button class="tab-item" data-tab="settings-section">Bank settings</button>
+      <button class="tab-item" data-tab="orders-section">Platform bookings</button>
+    </nav>
+
+    <section id="vendors-section">
+      <div class="section-head">
+        <div><h2>Shops &amp; approvals</h2><div class="section-description">Review subscription payment requests and see every shop's status.</div></div>
+        <button class="btn btn-primary" id="refresh-vendors-btn"><i class="ph ph-arrows-clockwise"></i> Refresh</button>
+      </div>
+      <div class="notice">Verify each payment in your bank account before approving it. Open the receipt to inspect the proof. Rejecting a request lets the shop upload a new proof, and no shop data is deleted.</div>
+      <div id="vendors-admin-list" class="card-list"><div class="empty-box">Loading shops…</div></div>
+      <div class="sub-heading">All shops</div>
+      <div id="shops-admin-list" class="card-list"><div class="empty-box">Loading shops…</div></div>
+    </section>
+
+    <section id="settings-section" class="hidden">
+      <div class="section-head"><div><h2>Founder bank settings</h2><div class="section-description">Receiving details for subscription payments.</div></div></div>
+      <div class="admin-card">
+        <div class="notice">Check your account details carefully before saving. Vendors see these details when they pay their subscription.</div>
+        <div class="form-field">
+          <label for="founder-bank-select">Bank</label>
+          <select id="founder-bank-select">
+            <option value="">Choose your bank</option>
+            <option value="First National Bank (FNB)|250655">First National Bank (FNB)</option>
+            <option value="Capitec Bank|470010">Capitec Bank</option>
+            <option value="Standard Bank|051001">Standard Bank</option>
+            <option value="ABSA Bank|632005">ABSA Bank</option>
+            <option value="Nedbank|198765">Nedbank</option>
+            <option value="TymeBank|678910">TymeBank</option>
+            <option value="Discovery Bank|679000">Discovery Bank</option>
+          </select>
+        </div>
+        <div class="form-field"><label for="founder-acc-name">Account holder name</label><input type="text" id="founder-acc-name" placeholder="Account holder name" autocomplete="off"></div>
+        <div class="form-field"><label for="founder-acc-number">Account number</label><input type="text" id="founder-acc-number" inputmode="numeric" placeholder="Account number" autocomplete="off"></div>
+        <div class="form-field"><label for="founder-branch-code">Branch code</label><input type="text" id="founder-branch-code" readonly style="background:#f8fafc;color:var(--muted)" placeholder="Choose bank above"></div>
+        <button class="btn btn-primary" id="save-founder-bank-btn" style="width:100%">Save bank details</button>
+        <div id="bank-message" style="margin-top:12px"></div>
+      </div>
+    </section>
+
+    <section id="orders-section" class="hidden">
+      <div class="section-head">
+        <div><h2>Platform bookings</h2><div class="section-description">Review booking activity, appointment times and payment status.</div></div>
+        <button class="btn btn-primary" id="refresh-orders-btn"><i class="ph ph-arrows-clockwise"></i> Refresh</button>
+      </div>
+      <div class="analytics-grid">
+        <div class="analytics-card"><div class="analytics-label">Total bookings</div><div class="analytics-value" id="analytics-total">—</div></div>
+        <div class="analytics-card"><div class="analytics-label">Pending bookings</div><div class="analytics-value" id="analytics-pending">—</div></div>
+        <div class="analytics-card"><div class="analytics-label">Completed bookings</div><div class="analytics-value" id="analytics-completed">—</div></div>
+        <div class="analytics-card"><div class="analytics-label">Paid bookings</div><div class="analytics-value" id="analytics-paid">—</div></div>
+      </div>
+      <div class="filters">
+        <input class="search-input" id="booking-search" type="search" placeholder="Search customer, phone, reference or service…" aria-label="Search bookings">
+        <select class="search-input" id="booking-status-filter" aria-label="Filter bookings by status">
+          <option value="all">All booking statuses</option>
+          <option value="pending">Pending</option>
+          <option value="confirmed">Confirmed</option>
+          <option value="completed">Completed</option>
+          <option value="cancelled">Cancelled</option>
+        </select>
+      </div>
+      <div id="booking-results-note" class="small-note" style="margin-bottom:12px"></div>
+      <div id="orders-admin-list" class="card-list"><div class="empty-box">Loading bookings…</div></div>
+    </section>
+  </main>
+</div>
+
+<script>
+(function(){
+"use strict";
+
+const SUPABASE_URL="https://pvplhsiafklaoqrpdhpd.supabase.co";
+const SUPABASE_ANON_KEY="sb_publishable_VKlDPkR9JvJr6E4bcz1HSg_OG5_xy5r";
+const FOUNDER_ID="c0c85d2f-8473-49c3-a33a-92ff5acf1e94";
+const PROOF_BUCKET="subscription-proofs";
+const $=id=>document.getElementById(id);
+
+let refreshInProgress=false;
+let allBookings=[];
+let serviceById={};
+
+const saToday=()=>new Intl.DateTimeFormat("en-CA",{timeZone:"Africa/Johannesburg"}).format(new Date());
+
+function setLoginMessage(message,isError=false){
+  const t=$("login-message");
+  if(!t)return;
+  t.textContent=message||"";
+  t.style.color=isError?"#b42318":"var(--muted)";
+}
+function showStartupError(message){
+  const t=$("startup-message");
+  if(t){t.textContent=message;t.classList.remove("hidden");}
+  setLoginMessage(message,true);
+}
+function showMessage(container,message,isError=false){
+  container.replaceChildren();
+  const div=document.createElement("div");
+  div.className=isError?"error-box":"empty-box";
+  div.textContent=message;
+  container.appendChild(div);
+}
+function showInlineMessage(container,message,type="success"){
+  container.replaceChildren();
+  if(!message)return;
+  const div=document.createElement("div");
+  div.className=type==="error"?"error-box":"success-box";
+  div.textContent=message;
+  container.appendChild(div);
+}
+function money(value){
+  const n=Number(value);
+  if(value===null||value===undefined||value===""||!Number.isFinite(n))return "Price unavailable";
+  return new Intl.NumberFormat("en-ZA",{style:"currency",currency:"ZAR"}).format(n);
+}
+function setDashboard(visible){
+  $("auth-screen").classList.toggle("hidden",visible);
+  $("admin-dashboard").classList.toggle("hidden",!visible);
+}
+function safeDate(value){
+  if(!value)return "Not provided";
+  const d=new Date(value);
+  if(Number.isNaN(d.getTime()))return "Not provided";
+  return d.toLocaleString("en-ZA",{timeZone:"Africa/Johannesburg",year:"numeric",month:"short",day:"2-digit",hour:"2-digit",minute:"2-digit"});
+}
+function badgeClass(value){
+  const safe=String(value||"pending").toLowerCase().replace(/[^a-z0-9_-]/g,"");
+  return "status-badge status-"+safe;
+}
+function updateBadge(count){
+  try{
+    if(count>0&&navigator.setAppBadge)navigator.setAppBadge(count);
+    else if(navigator.clearAppBadge)navigator.clearAppBadge();
+  }catch(e){}
+  document.title=(count>0?"("+count+") ":"")+"BOOK.NOW | Founder Dashboard";
+}
+function addText(parent,tag,className,text){
+  const el=document.createElement(tag);
+  if(className)el.className=className;
+  el.textContent=text;
+  parent.appendChild(el);
+  return el;
+}
+
+if(!window.supabase||typeof window.supabase.createClient!=="function"){
+  showStartupError("The Supabase library did not load. Check your internet connection and refresh.");
+  return;
+}
+const db=window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY);
+
+async function requireFounder(){
+  const {data,error}=await db.auth.getUser();
+  if(error||!data?.user){setDashboard(false);return false;}
+  if(data.user.id!==FOUNDER_ID){
+    await db.auth.signOut();
+    setDashboard(false);
+    setLoginMessage("Access denied. Authorised founder account only.",true);
+    return false;
+  }
+  setDashboard(true);
+  return true;
+}
+
+async function boot(){
+  $("admin-login-form").addEventListener("submit",e=>{e.preventDefault();signIn();});
+  $("admin-logout-btn").addEventListener("click",signOut);
+  $("refresh-vendors-btn").addEventListener("click",loadAdminData);
+  $("refresh-orders-btn").addEventListener("click",loadOrders);
+  $("save-founder-bank-btn").addEventListener("click",saveFounderBank);
+  $("founder-bank-select").addEventListener("change",()=>{
+    const s=$("founder-bank-select").value;
+    $("founder-branch-code").value=s?s.split("|")[1]:"";
+  });
+  $("booking-search").addEventListener("input",renderBookings);
+  $("booking-status-filter").addEventListener("change",renderBookings);
+
+  document.querySelectorAll("[data-tab]").forEach(b=>{
+    b.addEventListener("click",()=>{
+      switchTab(b.dataset.tab);
+      if(b.dataset.tab==="orders-section"&&allBookings.length===0)loadOrders();
+    });
+  });
+
+  db.auth.onAuthStateChange(event=>{if(event==="SIGNED_OUT"){setDashboard(false);updateBadge(0);}});
+
+  // Keep the app fresh: refresh when you come back to it, and every minute while it is open
+  const dashboardOpen=()=>!document.hidden&&!$("admin-dashboard").classList.contains("hidden");
+  document.addEventListener("visibilitychange",()=>{if(dashboardOpen())loadAdminData();});
+  setInterval(()=>{if(dashboardOpen())loadAdminData();},60000);
+
+  try{
+    const {data,error}=await db.auth.getSession();
+    if(error)throw error;
+    if(data?.session){
+      if(await requireFounder())await loadAdminData();
+    }else{
+      setDashboard(false);
+    }
+  }catch(error){
+    setDashboard(false);
+    setLoginMessage("Could not check session: "+error.message,true);
+  }
+}
+
+async function signIn(){
+  const button=$("admin-login-btn");
+  const email=$("admin-email").value.trim();
+  const password=$("admin-password").value;
+  if(!email||!password){setLoginMessage("Enter your email and password.",true);return;}
+  button.disabled=true;
+  button.textContent="Signing in…";
+  try{
+    const {data,error}=await db.auth.signInWithPassword({email,password});
+    if(error)throw error;
+    if(data.user.id!==FOUNDER_ID){
+      await db.auth.signOut();
+      setDashboard(false);
+      throw new Error("Access denied. Authorised founder account only.");
+    }
+    setDashboard(true);
+    await loadAdminData();
+  }catch(error){
+    setLoginMessage(error.message||"Sign-in failed.",true);
+  }finally{
+    button.disabled=false;
+    button.textContent="Sign in to dashboard";
+  }
+}
+
+async function signOut(){
+  await db.auth.signOut();
+  setDashboard(false);
+  setLoginMessage("You have signed out.");
+}
+
+function switchTab(tabId){
+  ["vendors-section","settings-section","orders-section"].forEach(id=>$(id).classList.toggle("hidden",id!==tabId));
+  document.querySelectorAll("[data-tab]").forEach(b=>b.classList.toggle("active",b.dataset.tab===tabId));
+}
+
+async function loadAdminData(){
+  if(refreshInProgress)return;
+  if(!(await requireFounder()))return;
+  refreshInProgress=true;
+  $("global-message").textContent="Refreshing dashboard…";
+  try{
+    const results=await Promise.allSettled([loadStoresAndPayments(),loadOrders(),loadFounderBank()]);
+    const failed=results.some(r=>r.status==="rejected");
+    $("global-message").textContent=failed
+      ?"Dashboard refreshed with errors. Review the affected section."
+      :"Dashboard refreshed successfully.";
+  }finally{
+    refreshInProgress=false;
+  }
+}
+
+function renderShops(storeRows){
+  const list=$("shops-admin-list");
+  if(!storeRows.length){showMessage(list,"No shops registered yet.");return;
+  }
+  const now=Date.now();
+  list.replaceChildren(...storeRows.map(store=>{
+    const expires=store.subscription_expires_at?new Date(store.subscription_expires_at).getTime():null;
+    const live=String(store.status||"").toLowerCase()==="active"&&expires&&expires>now;
+    const daysLeft=expires?Math.ceil((expires-now)/86400000):null;
+
+    const card=document.createElement("article");
+    card.className="vendor-card";
+    const top=document.createElement("div");
+    top.className="vendor-top";
+    const details=document.createElement("div");
+    details.style.minWidth="0";
+    addText(details,"div","vendor-title",(store.store_name||"Unnamed shop")+" — "+(store.category||"STORE"));
+    addText(details,"div","vendor-meta","Contact: "+(store.phone_number||"Not provided"));
+    addText(details,"div","vendor-meta","Registered: "+safeDate(store.created_at));
+    addText(details,"div","vendor-meta",
+      expires?(live?`Subscription ends ${safeDate(store.subscription_expires_at)} (${daysLeft} day${daysLeft===1?"":"s"} left)`
+                   :`Subscription ended ${safeDate(store.subscription_expires_at)}`)
+             :"No subscription yet");
+    const badge=document.createElement("span");
+    badge.className=badgeClass(live?"active":(String(store.status||"").toLowerCase()==="active"?"expired":store.status));
+    badge.textContent=live?"LIVE":(String(store.status||"").toLowerCase()==="active"?"EXPIRED":String(store.status||"pending").replaceAll("_"," ").toUpperCase());
+    top.append(details,badge);
+    card.appendChild(top);
+    return card;
+  }));
+}
+
+async function loadStoresAndPayments(){
+  const container=$("vendors-admin-list");
+  showMessage(container,"Loading shops and payment requests…");
+  showMessage($("shops-admin-list"),"Loading shops…");
+
+  const {data:stores,error:storeError}=await db.from("stores").select("*").order("created_at",{ascending:false});
+  if(storeError){
+    ["stat-shops","stat-active","stat-pending"].forEach(id=>$(id).textContent="—");
+    showMessage(container,"Could not load shops: "+storeError.message,true);
+    showMessage($("shops-admin-list"),"Could not load shops.",true);
+    throw storeError;
+  }
+
+  const storeRows=stores||[];
+  $("stat-shops").textContent=String(storeRows.length);
+  $("stat-active").textContent=String(storeRows.filter(s=>
+    String(s.status||"").toLowerCase()==="active"&&s.subscription_expires_at&&new Date(s.subscription_expires_at).getTime()>Date.now()
+  ).length);
+  renderShops(storeRows);
+
+  const {data:requests,error:requestError}=await db.rpc("founder_list_subscription_payment_requests");
+  if(requestError){
+    $("stat-pending").textContent="—";
+    showMessage(container,"Could not load subscription requests: "+requestError.message,true);
+    throw requestError;
+  }
+
+  const pending=(requests||[]).filter(r=>String(r.status||"").toUpperCase()==="PENDING");
+  $("stat-pending").textContent=String(pending.length);
+  updateBadge(pending.length);
+  container.replaceChildren();
+
+  if(!pending.length){showMessage(container,"No pending subscription payment requests.");return;}
+
+  pending.forEach(request=>{
+    const store=storeRows.find(s=>s.id===request.store_id);
+    const card=document.createElement("article");
+    card.className="vendor-card";
+
+    const top=document.createElement("div");
+    top.className="vendor-top";
+    const details=document.createElement("div");
+    details.style.minWidth="0";
+
+    addText(details,"div","vendor-title",(store?.store_name||"Unknown shop")+" — "+(store?.category||"STORE"));
+    addText(details,"div","vendor-meta","Request amount: "+money(request.amount));
+    addText(details,"div","vendor-meta","Shop contact: "+(store?.phone_number||"Not available"));
+    addText(details,"div","vendor-meta","Submitted: "+safeDate(request.created_at));
+
+    const ref=document.createElement("span");
+    ref.className="ref-pill";
+    ref.textContent="REF: "+(request.payment_reference||"N/A");
+    details.appendChild(ref);
+
+    if(request.receipt_path){
+      const rb=document.createElement("button");
+      rb.type="button";
+      rb.className="btn";
+      rb.style.marginTop="10px";
+      rb.innerHTML='<i class="ph ph-file-image"></i> Open payment receipt';
+      rb.addEventListener("click",()=>openPrivateReceipt(request.receipt_path,rb));
+      details.appendChild(document.createElement("br"));
+      details.appendChild(rb);
+    }
+
+    const status=document.createElement("span");
+    status.className=badgeClass(request.status);
+    status.textContent=String(request.status||"PENDING").toUpperCase();
+    top.append(details,status);
+
+    const actions=document.createElement("div");
+    actions.className="actions";
+    addText(actions,"span","small-note","Verify the payment in your bank before approval.");
+    const buttons=document.createElement("div");
+    buttons.className="actions-buttons";
+
+    const approve=document.createElement("button");
+    approve.className="btn btn-success";
+    approve.textContent="Approve payment";
+    approve.addEventListener("click",()=>approvePaymentRequest(request.id,approve));
+
+    const reject=document.createElement("button");
+    reject.className="btn btn-danger";
+    reject.textContent="Reject request";
+    reject.addEventListener("click",()=>rejectPaymentRequest(request.id,reject));
+
+    buttons.append(approve,reject);
+    actions.appendChild(buttons);
+    card.append(top,actions);
+    container.appendChild(card);
+  });
+}
+
+async function openPrivateReceipt(receiptPath,button){
+  if(!(await requireFounder()))return;
+  button.disabled=true;
+  const old=button.innerHTML;
+  button.textContent="Opening…";
+  try{
+    const {data,error}=await db.storage.from(PROOF_BUCKET).createSignedUrl(receiptPath,60);
+    if(error)throw error;
+    window.open(data.signedUrl,"_blank","noopener");
+  }catch(error){
+    alert("Could not open receipt: "+error.message);
+  }finally{
+    button.disabled=false;
+    button.innerHTML=old;
+  }
+}
+
+async function approvePaymentRequest(requestId,button){
+  if(!(await requireFounder()))return;
+  if(!confirm("Confirm that you received this payment in your bank account?"))return;
+  button.disabled=true;
+  button.textContent="Approving…";
+  try{
+    const {data,error}=await db.rpc("approve_subscription_payment",{p_request_id:requestId});
+    if(error)throw error;
+    if(data&&data.success===false)throw new Error(data.message||"Approval was rejected.");
+    alert("Payment request approved. The shop is now live for 30 days.");
+    await loadAdminData();
+  }catch(error){
+    alert("Approval failed: "+error.message);
+  }finally{
+    button.disabled=false;
+    button.textContent="Approve payment";
+  }
+}
+
+async function rejectPaymentRequest(requestId,button){
+  if(!(await requireFounder()))return;
+  if(!confirm("Reject this payment request? The shop can upload a new proof of payment."))return;
+  button.disabled=true;
+  button.textContent="Rejecting…";
+  try{
+    const {data,error}=await db.rpc("reject_subscription_payment",{p_request_id:requestId});
+    if(error)throw error;
+    if(data&&data.success===false)throw new Error(data.message||"Rejection failed.");
+    alert("Payment request rejected.");
+    await loadAdminData();
+  }catch(error){
+    alert("Rejection failed: "+error.message);
+  }finally{
+    button.disabled=false;
+    button.textContent="Reject request";
+  }
+}
+
+async function loadFounderBank(){
+  const {data,error}=await db.from("platform_settings").select("*").eq("id",1).maybeSingle();
+  if(error)throw error;
+  if(!data)return;
+  $("founder-acc-name").value=data.account_name||"";
+  $("founder-acc-number").value=data.account_number||"";
+  $("founder-branch-code").value=data.branch_code||"";
+  if(data.bank_name){
+    const match=[...$("founder-bank-select").options].find(o=>o.value.startsWith(data.bank_name+"|"));
+    if(match)$("founder-bank-select").value=match.value;
+  }
+}
+
+async function saveFounderBank(){
+  if(!(await requireFounder()))return;
+  const button=$("save-founder-bank-btn");
+  const selection=$("founder-bank-select").value;
+  if(!selection){showInlineMessage($("bank-message"),"Please select a bank.","error");return;}
+
+  const [bank_name,selectedBranch]=selection.split("|");
+  const account_name=$("founder-acc-name").value.trim();
+  const account_number=$("founder-acc-number").value.replace(/\s/g,"");
+  const branch_code=$("founder-branch-code").value.trim()||selectedBranch;
+
+  if(!account_name){showInlineMessage($("bank-message"),"Enter the account holder name.","error");return;}
+  if(!/^\d{8,16}$/.test(account_number)){showInlineMessage($("bank-message"),"Account number must be 8 to 16 digits, numbers only.","error");return;}
+
+  button.disabled=true;
+  button.textContent="Saving…";
+  try{
+    const {data:existing,error:readError}=await db.from("platform_settings").select("id").eq("id",1).maybeSingle();
+    if(readError)throw readError;
+    if(!existing)throw new Error("Platform settings row with id 1 does not exist.");
+
+    const {error}=await db.from("platform_settings").update({
+      bank_name,account_name,account_number,branch_code,updated_at:new Date().toISOString()
+    }).eq("id",1);
+    if(error)throw error;
+    showInlineMessage($("bank-message"),"Bank details saved successfully.");
+  }catch(error){
+    showInlineMessage($("bank-message"),"Saving failed: "+error.message,"error");
+  }finally{
+    button.disabled=false;
+    button.textContent="Save bank details";
+  }
+}
+
+async function loadOrders(){
+  const container=$("orders-admin-list");
+  showMessage(container,"Loading customer bookings…");
+  $("stat-orders").textContent="…";
+
+  try{
+    const total=await db.from("bookings").select("id",{count:"exact",head:true});
+    if(total.error)throw total.error;
+
+    const {data:bookings,error}=await db.from("bookings").select("*").order("created_at",{ascending:false}).limit(500);
+    if(error)throw error;
+
+    allBookings=bookings||[];
+    $("stat-orders").textContent=String(total.count??allBookings.length);
+
+    serviceById={};
+    const ids=[...new Set(allBookings.map(b=>b.service_id).filter(Boolean))];
+    if(ids.length){
+      const {data:services,error:serviceError}=await db.from("service_items")
+        .select("id,title,price,sale_price,sale_start_date,sale_end_date").in("id",ids);
+      if(serviceError)console.warn("Could not load service details:",serviceError.message);
+      else (services||[]).forEach(s=>{serviceById[s.id]=s;});
+    }
+
+    updateBookingAnalytics();
+    renderBookings();
+  }catch(error){
+    console.error("Founder booking load failed:",error);
+    $("stat-orders").textContent="Error";
+    ["analytics-total","analytics-pending","analytics-completed","analytics-paid"].forEach(id=>$(id).textContent="—");
+    showMessage(container,"Could not load customer bookings: "+(error.message||"Unknown error"),true);
+    throw error;
+  }
+}
+
+function updateBookingAnalytics(){
+  const count=(field,value)=>allBookings.filter(b=>String(b[field]||"").toLowerCase()===value).length;
+  $("analytics-total").textContent=String(allBookings.length);
+  $("analytics-pending").textContent=String(count("status","pending"));
+  $("analytics-completed").textContent=String(count("status","completed"));
+  $("analytics-paid").textContent=String(count("payment_status","paid"));
+}
+
+function currentServicePrice(service){
+  if(!service)return null;
+  const today=saToday();
+  const sale=Number(service.sale_price);
+  const onSale=service.sale_price!=null&&sale>0&&sale<Number(service.price)
+    &&(!service.sale_start_date||today>=service.sale_start_date)&&(!service.sale_end_date||today<=service.sale_end_date);
+  if(onSale)return sale;
+  return service.price!=null&&service.price!==""?Number(service.price):null;
+}
+
+function renderBookings(){
+  const container=$("orders-admin-list");
+  const query=$("booking-search").value.trim().toLowerCase();
+  const statusFilter=$("booking-status-filter").value;
+
+  const filtered=allBookings.filter(b=>{
+    const status=String(b.status||"pending").toLowerCase();
+    if(statusFilter!=="all"&&status!==statusFilter)return false;
+    const service=serviceById[b.service_id];
+    const text=[b.customer_name,b.customer_phone,b.payment_ref,b.status,b.payment_status,b.payment_method,b.id,service?.title].join(" ").toLowerCase();
+    return !query||text.includes(query);
+  });
+
+  $("booking-results-note").textContent="Showing "+filtered.length+" of "+allBookings.length+" loaded bookings (latest 500). Analytics reflect the loaded records.";
+
+  container.replaceChildren();
+  if(!filtered.length){
+    showMessage(container,allBookings.length?"No bookings match your search or status filter.":"No customer bookings found.");
+    return;
+  }
+
+  filtered.forEach(b=>{
+    const service=serviceById[b.service_id]||null;
+    const card=document.createElement("article");
+    card.className="order-card";
+
+    const top=document.createElement("div");
+    top.className="order-top";
+    const details=document.createElement("div");
+    details.style.minWidth="0";
+
+    addText(details,"div","order-title",(b.customer_name||"Customer")+" ("+(b.customer_phone||"N/A")+")");
+    addText(details,"div","order-time","Booking created: "+safeDate(b.created_at));
+    if(b.booking_date)addText(details,"div","vendor-meta","Appointment: "+b.booking_date+(b.booking_time?" at "+b.booking_time:""));
+    addText(details,"div","vendor-meta","Service: "+(service?.title||"Service details unavailable"));
+
+    const status=document.createElement("span");
+    status.className=badgeClass(b.status);
+    status.style.marginTop="8px";
+    status.textContent="Status: "+String(b.status||"pending").replaceAll("_"," ").toUpperCase();
+    details.appendChild(document.createElement("br"));
+    details.appendChild(status);
+
+    const ref=document.createElement("span");
+    ref.className="ref-pill";
+    ref.textContent="REF: "+(b.payment_ref||"N/A");
+    details.appendChild(document.createElement("br"));
+    details.appendChild(ref);
+
+    addText(details,"div","vendor-meta","Payment: "+(b.payment_method||"Not specified")+" · "+String(b.payment_status||"Unknown").toUpperCase());
+    if(b.queue_number!=null)addText(details,"div","vendor-meta","Queue number: "+b.queue_number);
+    if(b.comment)addText(details,"div","vendor-meta","Customer note: "+b.comment);
+
+    // Uses the price locked at booking time; older bookings fall back to today's catalogue price
+    const priceWrap=document.createElement("div");
+    priceWrap.style.minWidth="0";
+    if(b.booked_price!=null){
+      addText(priceWrap,"div","order-price","Booked price: "+money(b.booked_price));
+    }else{
+      const p=currentServicePrice(service);
+      addText(priceWrap,"div","order-price",p===null?"Price unavailable":"Price: "+money(p));
+      addText(priceWrap,"div","price-note","Older booking. Showing the current catalogue price because the booked price wasn't stored.");
+    }
+
+    top.append(details,priceWrap);
+    card.appendChild(top);
+    container.appendChild(card);
+  });
+}
+
+document.addEventListener("DOMContentLoaded",boot);
+})();
+</script>
+<script>if("serviceWorker" in navigator){window.addEventListener("load",function(){navigator.serviceWorker.register("sw.js").catch(function(){});});}</script>
+</body>
+</html>
