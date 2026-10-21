@@ -717,6 +717,7 @@ function renderBookings(){
     addText(details,"div","order-time","Booking created: "+safeDate(b.created_at));
     if(b.booking_date)addText(details,"div","vendor-meta","Appointment: "+b.booking_date+(b.booking_time?" at "+b.booking_time:""));
     addText(details,"div","vendor-meta","Service: "+(service?.title||"Service details unavailable"));
+    if(b.party_size>1)addText(details,"div","vendor-meta","Guests: "+b.party_size);
 
     const status=document.createElement("span");
     status.className=badgeClass(b.status);
