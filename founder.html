@@ -402,7 +402,7 @@ async function loadAdminData(){
   }
 }
 
-function renderShops(storeRows){
+function renderShops(storeRows,pendingIds=new Set()){
   const list=$("shops-admin-list");
   if(!storeRows.length){showMessage(list,"No shops registered yet.");return;
   }
@@ -430,6 +430,18 @@ function renderShops(storeRows){
     badge.textContent=live?"LIVE":(String(store.status||"").toLowerCase()==="active"?"EXPIRED":String(store.status||"pending").replaceAll("_"," ").toUpperCase());
     top.append(details,badge);
     card.appendChild(top);
+    if(!live&&!pendingIds.has(store.id)){
+      const actions=document.createElement("div");
+      actions.className="actions";
+      addText(actions,"span","small-note","Not live yet. Give a free first month to switch this shop on for 30 days.");
+      const give=document.createElement("button");
+      give.type="button";
+      give.className="btn btn-success";
+      give.textContent="Give free month";
+      give.addEventListener("click",()=>giveFreeMonth(store,give));
+      actions.appendChild(give);
+      card.appendChild(actions);
+    }
     return card;
   }));
 }
@@ -464,6 +476,7 @@ async function loadStoresAndPayments(){
   const pending=(requests||[]).filter(r=>String(r.status||"").toUpperCase()==="PENDING");
   $("stat-pending").textContent=String(pending.length);
   updateBadge(pending.length);
+  renderShops(storeRows,new Set(pending.map(r=>r.store_id)));
   container.replaceChildren();
 
   if(!pending.length){showMessage(container,"No pending subscription payment requests.");return;}
@@ -525,6 +538,25 @@ async function loadStoresAndPayments(){
     card.append(top,actions);
     container.appendChild(card);
   });
+}
+
+async function giveFreeMonth(store,button){
+  if(!(await requireFounder()))return;
+  if(!confirm("Give "+(store.store_name||"this shop")+" a free first month? The shop goes live for 30 days with no payment, and renews at R299/month after that."))return;
+  button.disabled=true;
+  button.textContent="Switching on…";
+  try{
+    const {data,error}=await db.rpc("grant_free_month",{p_store_id:store.id});
+    if(error)throw error;
+    if(data&&data.success===false)throw new Error(data.message||"Could not give a free month.");
+    alert((store.store_name||"The shop")+" is now live for 30 days.");
+    await loadAdminData();
+  }catch(error){
+    alert("Free month failed: "+error.message);
+  }finally{
+    button.disabled=false;
+    button.textContent="Give free month";
+  }
 }
 
 async function openPrivateReceipt(receiptPath,button){
