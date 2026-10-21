@@ -149,6 +149,7 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid 
       <button class="tab-item active" data-tab="vendors-section">Shops &amp; approvals</button>
       <button class="tab-item" data-tab="settings-section">Bank settings</button>
       <button class="tab-item" data-tab="orders-section">Platform bookings</button>
+      <button class="tab-item" data-tab="reviews-section">Reviews</button>
     </nav>
 
     <section id="vendors-section">
@@ -185,6 +186,14 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid 
         <button class="btn btn-primary" id="save-founder-bank-btn" style="width:100%">Save bank details</button>
         <div id="bank-message" style="margin-top:12px"></div>
       </div>
+    </section>
+
+    <section id="reviews-section" class="hidden">
+      <div class="section-head">
+        <div><h2>Customer reviews</h2><div class="section-description">Hide a review that is abusive or fake. Hidden reviews disappear from the shop page and the rating.</div></div>
+        <button class="btn btn-primary" id="refresh-reviews-btn"><i class="ph ph-arrows-clockwise"></i> Refresh</button>
+      </div>
+      <div id="reviews-admin-list" class="card-list"><div class="empty-box">Loading reviews…</div></div>
     </section>
 
     <section id="orders-section" class="hidden">
@@ -227,6 +236,7 @@ const $=id=>document.getElementById(id);
 let refreshInProgress=false;
 let allBookings=[];
 let serviceById={};
+let storeNameById={};
 
 const saToday=()=>new Intl.DateTimeFormat("en-CA",{timeZone:"Africa/Johannesburg"}).format(new Date());
 
@@ -314,6 +324,7 @@ async function boot(){
   $("admin-logout-btn").addEventListener("click",signOut);
   $("refresh-vendors-btn").addEventListener("click",loadAdminData);
   $("refresh-orders-btn").addEventListener("click",loadOrders);
+  $("refresh-reviews-btn").addEventListener("click",loadReviewsAdmin);
   $("save-founder-bank-btn").addEventListener("click",saveFounderBank);
   $("founder-bank-select").addEventListener("change",()=>{
     const s=$("founder-bank-select").value;
@@ -382,7 +393,7 @@ async function signOut(){
 }
 
 function switchTab(tabId){
-  ["vendors-section","settings-section","orders-section"].forEach(id=>$(id).classList.toggle("hidden",id!==tabId));
+  ["vendors-section","settings-section","orders-section","reviews-section"].forEach(id=>$(id).classList.toggle("hidden",id!==tabId));
   document.querySelectorAll("[data-tab]").forEach(b=>b.classList.toggle("active",b.dataset.tab===tabId));
 }
 
@@ -392,7 +403,7 @@ async function loadAdminData(){
   refreshInProgress=true;
   $("global-message").textContent="Refreshing dashboard…";
   try{
-    const results=await Promise.allSettled([loadStoresAndPayments(),loadOrders(),loadFounderBank()]);
+    const results=await Promise.allSettled([loadStoresAndPayments(),loadOrders(),loadFounderBank(),loadReviewsAdmin()]);
     const failed=results.some(r=>r.status==="rejected");
     $("global-message").textContent=failed
       ?"Dashboard refreshed with errors. Review the affected section."
@@ -461,6 +472,7 @@ async function loadStoresAndPayments(){
 
   const storeRows=stores||[];
   $("stat-shops").textContent=String(storeRows.length);
+  storeNameById={};storeRows.forEach(s=>{storeNameById[s.id]=s.store_name||"Unnamed shop";});
   $("stat-active").textContent=String(storeRows.filter(s=>
     String(s.status||"").toLowerCase()==="active"&&s.subscription_expires_at&&new Date(s.subscription_expires_at).getTime()>Date.now()
   ).length);
@@ -538,6 +550,50 @@ async function loadStoresAndPayments(){
     card.append(top,actions);
     container.appendChild(card);
   });
+}
+
+async function loadReviewsAdmin(){
+  const container=$("reviews-admin-list");
+  try{
+    const {data,error}=await db.from("reviews").select("id,store_id,display_name,rating,comment,is_hidden,created_at").order("created_at",{ascending:false}).limit(100);
+    if(error)throw error;
+    if(!data||!data.length){showMessage(container,"No reviews yet. They appear here after customers rate a completed booking.");return;}
+    container.replaceChildren(...data.map(r=>{
+      const card=document.createElement("article");
+      card.className="vendor-card";
+      const top=document.createElement("div");
+      top.className="vendor-top";
+      const details=document.createElement("div");
+      details.style.minWidth="0";
+      addText(details,"div","vendor-title",(storeNameById[r.store_id]||"Shop")+" — "+"\u2605".repeat(r.rating)+"\u2606".repeat(5-r.rating));
+      addText(details,"div","vendor-meta",(r.display_name||"Customer")+" · "+safeDate(r.created_at));
+      if(r.comment)addText(details,"div","vendor-meta","\u201C"+r.comment+"\u201D");
+      const badge=document.createElement("span");
+      badge.className=badgeClass(r.is_hidden?"rejected":"active");
+      badge.textContent=r.is_hidden?"HIDDEN":"VISIBLE";
+      top.append(details,badge);
+      const actions=document.createElement("div");
+      actions.className="actions";
+      addText(actions,"span","small-note",r.is_hidden?"Hidden from customers.":"Shown on the shop page and in its rating.");
+      const btn=document.createElement("button");
+      btn.type="button";
+      btn.className=r.is_hidden?"btn btn-success":"btn btn-danger";
+      btn.textContent=r.is_hidden?"Show review":"Hide review";
+      btn.addEventListener("click",async()=>{
+        if(!r.is_hidden&&!confirm("Hide this review? It will disappear from the shop page and its rating."))return;
+        btn.disabled=true;
+        const {error:upErr}=await db.from("reviews").update({is_hidden:!r.is_hidden}).eq("id",r.id);
+        if(upErr){alert("Could not update the review: "+upErr.message);btn.disabled=false;return;}
+        loadReviewsAdmin();
+      });
+      actions.appendChild(btn);
+      card.append(top,actions);
+      return card;
+    }));
+  }catch(error){
+    showMessage(container,"Could not load reviews: "+error.message,true);
+    throw error;
+  }
 }
 
 async function giveFreeMonth(store,button){
