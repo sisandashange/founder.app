@@ -22,6 +22,9 @@ button,input,select{font:inherit}
 button{cursor:pointer}
 button:disabled{opacity:.55;cursor:not-allowed}
 .hidden{display:none!important}
+.mfa-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
+.mfa-steps{font-size:12.5px;line-height:1.7;padding-left:18px;margin:0 0 14px;color:#344054}
+.mfa-secret{font-family:monospace;font-size:15px;font-weight:800;background:#f1f5f9;border-radius:10px;padding:12px;text-align:center;letter-spacing:1px;overflow-wrap:anywhere}
 a{color:var(--accent);font-weight:700;overflow-wrap:anywhere}
 button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid #bfdbfe;outline-offset:2px}
 #auth-screen{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
@@ -118,6 +121,35 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid 
       <button type="submit" class="btn btn-primary" id="admin-login-btn" style="width:100%;padding:13px">Sign in to dashboard</button>
     </form>
     <div id="login-message" class="small-note" role="status" aria-live="polite" style="margin-top:13px"></div>
+  </div>
+</div>
+
+<div id="mfa-screen" class="mfa-wrap hidden">
+  <div class="auth-card">
+    <div class="brand" style="justify-content:center;margin-bottom:16px"><i class="ph ph-lock-key"></i> BOOK.NOW</div>
+    <div id="mfa-step-code" class="hidden">
+      <div class="auth-title">Enter your code</div>
+      <div class="auth-sub">Open your authenticator app and type the 6-digit code for BOOK.NOW.</div>
+    </div>
+    <div id="mfa-step-setup" class="hidden">
+      <div class="auth-title">Set up two-step login</div>
+      <div class="auth-sub">Protect your founder account with a code from your phone.</div>
+      <ol class="mfa-steps">
+        <li>Install an authenticator app, such as Google Authenticator or Microsoft Authenticator.</li>
+        <li>Tap <b>Open in authenticator app</b>. Or scan the QR code with a different phone. Or type the secret key into the app.</li>
+        <li>Type the 6-digit code the app shows.</li>
+      </ol>
+      <a id="mfa-open-app" class="btn btn-primary" style="width:100%;margin-bottom:12px;text-decoration:none" href="#">Open in authenticator app</a>
+      <div style="text-align:center"><img id="mfa-qr" alt="QR code for your authenticator app" width="170" height="170"></div>
+      <div class="small-note" style="text-align:center;margin:8px 0 6px">Or type this secret key into the app:</div>
+      <div id="mfa-secret" class="mfa-secret"></div>
+      <button type="button" class="btn" id="mfa-copy-btn" style="width:100%;margin:8px 0 12px">Copy secret key</button>
+      <div class="small-note" style="margin-bottom:14px">Keep the secret key somewhere safe. If you lose your phone, you will need it to get back in.</div>
+    </div>
+    <div class="form-field"><label for="mfa-code">6-digit code</label><input type="text" id="mfa-code" inputmode="numeric" autocomplete="one-time-code" maxlength="8" placeholder="123456"></div>
+    <div id="mfa-message" class="small-note" role="alert" aria-live="polite" style="margin:0 0 12px;min-height:16px"></div>
+    <button type="button" class="btn btn-primary" id="mfa-verify-btn" style="width:100%;padding:13px">Verify and continue</button>
+    <button type="button" class="btn" id="mfa-signout-btn" style="width:100%;margin-top:10px">Sign out</button>
   </div>
 </div>
 
@@ -272,6 +304,7 @@ function money(value){
   return new Intl.NumberFormat("en-ZA",{style:"currency",currency:"ZAR"}).format(n);
 }
 function setDashboard(visible){
+  $("mfa-screen").classList.add("hidden");
   $("auth-screen").classList.toggle("hidden",visible);
   $("admin-dashboard").classList.toggle("hidden",!visible);
 }
@@ -315,6 +348,7 @@ async function requireFounder(){
     setLoginMessage("Access denied. Authorised founder account only.",true);
     return false;
   }
+  if(await needsMfa()){await beginMfa();return false;}
   setDashboard(true);
   return true;
 }
@@ -322,6 +356,13 @@ async function requireFounder(){
 async function boot(){
   $("admin-login-form").addEventListener("submit",e=>{e.preventDefault();signIn();});
   $("admin-logout-btn").addEventListener("click",signOut);
+  $("mfa-verify-btn").addEventListener("click",verifyMfa);
+  $("mfa-code").addEventListener("keydown",e=>{if(e.key==="Enter"){e.preventDefault();verifyMfa();}});
+  $("mfa-signout-btn").addEventListener("click",signOut);
+  $("mfa-copy-btn").addEventListener("click",async()=>{
+    try{await navigator.clipboard.writeText($("mfa-secret").textContent);setMfaMessage("Secret key copied.");}
+    catch(e){setMfaMessage("Press and hold the key to copy it.",true);}
+  });
   $("refresh-vendors-btn").addEventListener("click",loadAdminData);
   $("refresh-orders-btn").addEventListener("click",loadOrders);
   $("refresh-reviews-btn").addEventListener("click",loadReviewsAdmin);
@@ -361,6 +402,69 @@ async function boot(){
   }
 }
 
+// ---- Two-step login (authenticator app code) ----
+let mfaFactorId=null;
+function setMfaMessage(text,isError){
+  const t=$("mfa-message");
+  t.textContent=text||"";
+  t.style.color=isError?"#b42318":"var(--muted)";
+}
+function showMfaStep(step){
+  $("auth-screen").classList.add("hidden");
+  $("admin-dashboard").classList.add("hidden");
+  $("mfa-screen").classList.remove("hidden");
+  $("mfa-step-code").classList.toggle("hidden",step!=="code");
+  $("mfa-step-setup").classList.toggle("hidden",step!=="setup");
+  $("mfa-code").value="";
+  setMfaMessage("");
+}
+async function needsMfa(){
+  try{
+    const {data,error}=await db.auth.mfa.getAuthenticatorAssuranceLevel();
+    if(error)throw error;
+    return data.currentLevel!=="aal2";
+  }catch(e){
+    console.warn("Could not check the login level:",e);
+    return true;
+  }
+}
+async function beginMfa(){
+  const {data:fl,error:fe}=await db.auth.mfa.listFactors();
+  if(fe){showMfaStep("code");setMfaMessage("Could not check your two-step login: "+fe.message,true);return;}
+  const verified=(fl.totp||[])[0];
+  if(verified){mfaFactorId=verified.id;showMfaStep("code");return;}
+  showMfaStep("setup");
+  // clear any half-finished setup from before
+  for(const f of (fl.all||[])){
+    if(f.factor_type==="totp"&&f.status!=="verified"){try{await db.auth.mfa.unenroll({factorId:f.id});}catch(e){}}
+  }
+  const {data,error}=await db.auth.mfa.enroll({factorType:"totp",friendlyName:"Founder phone "+Date.now()});
+  if(error){setMfaMessage("Could not start setup: "+error.message,true);return;}
+  mfaFactorId=data.id;
+  $("mfa-qr").src=data.totp.qr_code;
+  $("mfa-secret").textContent=data.totp.secret;
+  $("mfa-open-app").href=data.totp.uri;
+}
+async function verifyMfa(){
+  const code=$("mfa-code").value.replace(/\s/g,"");
+  if(!/^\d{6}$/.test(code)){setMfaMessage("Enter the 6-digit code from your authenticator app.",true);return;}
+  if(!mfaFactorId){setMfaMessage("Setup is not ready. Refresh the page and sign in again.",true);return;}
+  const btn=$("mfa-verify-btn");
+  btn.disabled=true;
+  btn.textContent="Checking…";
+  try{
+    const {error}=await db.auth.mfa.challengeAndVerify({factorId:mfaFactorId,code});
+    if(error)throw error;
+    setDashboard(true);
+    await loadAdminData();
+  }catch(error){
+    setMfaMessage("That code did not work. Wait for the next code in your app and try again.",true);
+  }finally{
+    btn.disabled=false;
+    btn.textContent="Verify and continue";
+  }
+}
+
 async function signIn(){
   const button=$("admin-login-btn");
   const email=$("admin-email").value.trim();
@@ -376,6 +480,7 @@ async function signIn(){
       setDashboard(false);
       throw new Error("Access denied. Authorised founder account only.");
     }
+    if(await needsMfa()){await beginMfa();return;}
     setDashboard(true);
     await loadAdminData();
   }catch(error){
