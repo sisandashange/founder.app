@@ -144,7 +144,9 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid 
       <div class="small-note" style="text-align:center;margin:8px 0 6px">Or type this secret key into the app:</div>
       <div id="mfa-secret" class="mfa-secret"></div>
       <button type="button" class="btn" id="mfa-copy-btn" style="width:100%;margin:8px 0 12px">Copy secret key</button>
-      <div class="small-note" style="margin-bottom:14px">Keep the secret key somewhere safe. If you lose your phone, you will need it to get back in.</div>
+      <div class="small-note" style="margin-bottom:10px">Keep the secret key somewhere safe. If you lose your phone, you will need it to get back in.</div>
+      <button type="button" class="btn" id="mfa-restart-btn" style="width:100%;margin-bottom:14px">Codes not working? Start over with a new secret key</button>
+      <div class="small-note" style="margin:-6px 0 14px">If you start over, first delete the old BOOK.NOW entry in your authenticator app, then add the new one.</div>
     </div>
     <div class="form-field"><label for="mfa-code">6-digit code</label><input type="text" id="mfa-code" inputmode="numeric" autocomplete="one-time-code" maxlength="8" placeholder="123456"></div>
     <div id="mfa-message" class="small-note" role="alert" aria-live="polite" style="margin:0 0 12px;min-height:16px"></div>
@@ -359,6 +361,7 @@ async function boot(){
   $("mfa-verify-btn").addEventListener("click",verifyMfa);
   $("mfa-code").addEventListener("keydown",e=>{if(e.key==="Enter"){e.preventDefault();verifyMfa();}});
   $("mfa-signout-btn").addEventListener("click",signOut);
+  $("mfa-restart-btn").addEventListener("click",restartMfaSetup);
   $("mfa-copy-btn").addEventListener("click",async()=>{
     try{await navigator.clipboard.writeText($("mfa-secret").textContent);setMfaMessage("Secret key copied.");}
     catch(e){setMfaMessage("Press and hold the key to copy it.",true);}
@@ -428,22 +431,41 @@ async function needsMfa(){
     return true;
   }
 }
+// The setup secret is remembered on this phone until the first code is accepted, so switching to the
+// authenticator app and back (which can reload this page) does not create a different secret.
+const SETUP_KEY="bn_founder_mfa_setup";
+function loadSetup(){try{return JSON.parse(localStorage.getItem(SETUP_KEY)||"null");}catch(e){return null;}}
+function saveSetup(o){try{localStorage.setItem(SETUP_KEY,JSON.stringify(o));}catch(e){}}
+function clearSetup(){try{localStorage.removeItem(SETUP_KEY);}catch(e){}}
+function fillSetup(o){
+  mfaFactorId=o.factorId;
+  $("mfa-qr").src=o.qr;
+  $("mfa-secret").textContent=o.secret;
+  $("mfa-open-app").href=o.uri;
+}
 async function beginMfa(){
   const {data:fl,error:fe}=await db.auth.mfa.listFactors();
   if(fe){showMfaStep("code");setMfaMessage("Could not check your two-step login: "+fe.message,true);return;}
   const verified=(fl.totp||[])[0];
-  if(verified){mfaFactorId=verified.id;showMfaStep("code");return;}
+  if(verified){clearSetup();mfaFactorId=verified.id;showMfaStep("code");return;}
   showMfaStep("setup");
-  // clear any half-finished setup from before
+  const saved=loadSetup();
+  if(saved&&(fl.all||[]).some(f=>f.id===saved.factorId&&f.status!=="verified")){fillSetup(saved);return;}
+  // clear any half-finished setup that we no longer have the secret for
   for(const f of (fl.all||[])){
     if(f.factor_type==="totp"&&f.status!=="verified"){try{await db.auth.mfa.unenroll({factorId:f.id});}catch(e){}}
   }
   const {data,error}=await db.auth.mfa.enroll({factorType:"totp",friendlyName:"Founder phone "+Date.now()});
   if(error){setMfaMessage("Could not start setup: "+error.message,true);return;}
-  mfaFactorId=data.id;
-  $("mfa-qr").src=data.totp.qr_code;
-  $("mfa-secret").textContent=data.totp.secret;
-  $("mfa-open-app").href=data.totp.uri;
+  const setup={factorId:data.id,qr:data.totp.qr_code,secret:data.totp.secret,uri:data.totp.uri};
+  saveSetup(setup);
+  fillSetup(setup);
+}
+async function restartMfaSetup(){
+  clearSetup();
+  setMfaMessage("Creating a new secret key…");
+  await beginMfa();
+  setMfaMessage("New secret key created. Delete the old BOOK.NOW entry in your authenticator app and add this one.");
 }
 async function verifyMfa(){
   const code=$("mfa-code").value.replace(/\s/g,"");
@@ -455,10 +477,11 @@ async function verifyMfa(){
   try{
     const {error}=await db.auth.mfa.challengeAndVerify({factorId:mfaFactorId,code});
     if(error)throw error;
+    clearSetup();
     setDashboard(true);
     await loadAdminData();
   }catch(error){
-    setMfaMessage("That code did not work. Wait for the next code in your app and try again.",true);
+    setMfaMessage("That code did not work. Use the newest code from the BOOK.NOW entry you added from this screen, and make sure your phone's date and time are set to automatic. ("+(error&&error.message?error.message:"unknown error")+")",true);
   }finally{
     btn.disabled=false;
     btn.textContent="Verify and continue";
