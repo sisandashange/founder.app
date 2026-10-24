@@ -159,6 +159,7 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid 
   <header class="top-nav">
     <div class="brand"><i class="ph ph-shield-check"></i> BOOK.NOW Founder</div>
     <div class="nav-right">
+      <button class="btn" id="push-btn" type="button">Turn on phone alerts</button>
       <span class="account-label">Founder account</span>
       <button class="btn btn-logout" id="admin-logout-btn">Log out <i class="ph ph-sign-out"></i></button>
     </div>
@@ -358,6 +359,13 @@ async function requireFounder(){
 async function boot(){
   $("admin-login-form").addEventListener("submit",e=>{e.preventDefault();signIn();});
   $("admin-logout-btn").addEventListener("click",signOut);
+  $("push-btn").addEventListener("click",togglePush);
+  updatePushButton();
+  if("serviceWorker" in navigator){
+    navigator.serviceWorker.addEventListener("message",e=>{
+      if(e.data&&e.data.type==="push"&&!$("admin-dashboard").classList.contains("hidden"))loadAdminData();
+    });
+  }
   $("mfa-verify-btn").addEventListener("click",verifyMfa);
   $("mfa-code").addEventListener("keydown",e=>{if(e.key==="Enter"){e.preventDefault();verifyMfa();}});
   $("mfa-signout-btn").addEventListener("click",signOut);
@@ -514,7 +522,58 @@ async function signIn(){
   }
 }
 
+// ---- Phone alerts (push): a payment proof reaches this phone even when the app is closed ----
+const PUSH_KEY="bn_founder_push";
+const pushChoice=()=>{try{return localStorage.getItem(PUSH_KEY);}catch(e){return null;}};
+const setPushChoice=v=>{try{localStorage.setItem(PUSH_KEY,v);}catch(e){} updatePushButton();};
+const pushSupported=()=>"serviceWorker" in navigator&&"PushManager" in window&&"Notification" in window;
+const urlB64ToBytes=b64=>{
+  const raw=atob((b64+"=".repeat((4-b64.length%4)%4)).replace(/-/g,"+").replace(/_/g,"/"));
+  return Uint8Array.from(raw,c=>c.charCodeAt(0));
+};
+function updatePushButton(){
+  const b=$("push-btn");
+  if(!b)return;
+  b.textContent=pushChoice()==="on"?"Phone alerts: On":"Turn on phone alerts";
+}
+async function syncPushSubscription(){
+  try{
+    if(!pushSupported()||Notification.permission!=="granted"||pushChoice()!=="on")return "off";
+    const reg=await navigator.serviceWorker.ready;
+    let sub=await reg.pushManager.getSubscription();
+    if(!sub){
+      const {data:key,error}=await db.rpc("get_push_public_key");
+      if(error||!key)return "error";
+      sub=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:urlB64ToBytes(key)});
+    }
+    const j=sub.toJSON();
+    const {error}=await db.rpc("save_push_subscription",{p_endpoint:j.endpoint,p_p256dh:j.keys.p256dh,p_auth:j.keys.auth,p_user_agent:navigator.userAgent});
+    return error?"error":"on";
+  }catch(e){console.warn("Phone alerts could not be set up:",e);return "error";}
+}
+async function removePushSubscription(){
+  try{
+    if(!pushSupported())return;
+    const reg=await navigator.serviceWorker.getRegistration();
+    const sub=reg&&await reg.pushManager.getSubscription();
+    if(!sub)return;
+    try{await db.rpc("remove_push_subscription",{p_endpoint:sub.endpoint});}catch(e){}
+    await sub.unsubscribe();
+  }catch(e){}
+}
+async function togglePush(){
+  if(pushChoice()==="on"){setPushChoice("off");await removePushSubscription();$("global-message").textContent="Phone alerts are off.";return;}
+  if(!pushSupported()){alert("This phone can't receive alerts when the app is closed.");return;}
+  try{if(Notification.permission==="default")await Notification.requestPermission();}catch(e){}
+  if(Notification.permission==="denied"){alert("Notifications are blocked for this app. Allow them in your phone settings, then try again.");return;}
+  setPushChoice("on");
+  const state=await syncPushSubscription();
+  $("global-message").textContent=state==="on"?"Phone alerts are on. You'll be told when a shop uploads proof of payment, even when the app is closed.":"Phone alerts could not be set up. Try again later.";
+  if(state!=="on")setPushChoice("off");
+}
+
 async function signOut(){
+  await removePushSubscription();
   await db.auth.signOut();
   setDashboard(false);
   setLoginMessage("You have signed out.");
@@ -530,6 +589,7 @@ async function loadAdminData(){
   if(!(await requireFounder()))return;
   refreshInProgress=true;
   $("global-message").textContent="Refreshing dashboard…";
+  if(!window.__pushSynced){window.__pushSynced=true;syncPushSubscription();}
   try{
     const results=await Promise.allSettled([loadStoresAndPayments(),loadOrders(),loadFounderBank(),loadReviewsAdmin()]);
     const failed=results.some(r=>r.status==="rejected");
