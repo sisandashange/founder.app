@@ -42,11 +42,10 @@ self.addEventListener("push", event => {
   event.waitUntil((async () => {
     const windows = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
     const mine = windows.filter(w => w.url.startsWith(self.registration.scope));
-    // If the app is open in front, it refreshes itself and shows its own banner, so skip a second alert
-    if (mine.some(w => w.visibilityState === "visible")) {
-      mine.forEach(w => w.postMessage({ type: "push", kind: data.tag || "" }));
-      return;
-    }
+    // Open pages are told to refresh. If the shop app is open in front it shows its own banner, so skip a second alert.
+    // Customer alerts (data.always) are always shown, because the customer page does not show a banner.
+    mine.forEach(w => w.postMessage({ type: "push", kind: data.tag || "" }));
+    if (!data.always && mine.some(w => w.visibilityState === "visible")) return;
     await self.registration.showNotification(data.title || "BOOK.NOW", {
       body: data.body || "",
       icon: "icon-192.png",
