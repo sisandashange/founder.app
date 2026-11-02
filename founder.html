@@ -22,6 +22,11 @@ button,input,select{font:inherit}
 button{cursor:pointer}
 button:disabled{opacity:.55;cursor:not-allowed}
 .hidden{display:none!important}
+.bar-row{display:flex;align-items:center;gap:10px;margin:9px 0;font-size:12px}
+.bar-label{width:72px;color:var(--muted);flex-shrink:0;font-weight:600}
+.bar-track{flex:1;background:#f1f5f9;border-radius:6px;height:14px;overflow:hidden}
+.bar-fill{background:var(--accent);height:100%;border-radius:6px;min-width:2px}
+.bar-val{min-width:70px;text-align:right;font-weight:700}
 .mfa-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
 .mfa-steps{font-size:12.5px;line-height:1.7;padding-left:18px;margin:0 0 14px;color:#344054}
 .mfa-secret{font-family:monospace;font-size:15px;font-weight:800;background:#f1f5f9;border-radius:10px;padding:12px;text-align:center;letter-spacing:1px;overflow-wrap:anywhere}
@@ -184,6 +189,8 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid 
       <button class="tab-item active" data-tab="vendors-section">Shops &amp; approvals</button>
       <button class="tab-item" data-tab="settings-section">Bank settings</button>
       <button class="tab-item" data-tab="orders-section">Platform bookings</button>
+      <button class="tab-item" data-tab="insights-section">Income &amp; renewals</button>
+      <button class="tab-item" data-tab="reports-section">Reports</button>
       <button class="tab-item" data-tab="reviews-section">Reviews</button>
     </nav>
 
@@ -221,6 +228,26 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid 
         <button class="btn btn-primary" id="save-founder-bank-btn" style="width:100%">Save bank details</button>
         <div id="bank-message" style="margin-top:12px"></div>
       </div>
+    </section>
+
+    <section id="insights-section" class="hidden">
+      <div class="section-head">
+        <div><h2>Income &amp; renewals</h2><div class="section-description">Subscription income, and the shops that need to renew soon.</div></div>
+        <button class="btn btn-primary" id="refresh-insights-btn"><i class="ph ph-arrows-clockwise"></i> Refresh</button>
+      </div>
+      <div class="analytics-grid" id="insight-tiles"></div>
+      <div class="sub-heading">Renewals due</div>
+      <div id="renewals-list" class="card-list"><div class="empty-box">Loading…</div></div>
+      <div class="sub-heading">Income by month</div>
+      <div id="income-months" class="admin-card"></div>
+    </section>
+
+    <section id="reports-section" class="hidden">
+      <div class="section-head">
+        <div><h2>Shop reports</h2><div class="section-description">Reports from customers. Check the shop, then mark the report as handled.</div></div>
+        <button class="btn btn-primary" id="refresh-reports-btn"><i class="ph ph-arrows-clockwise"></i> Refresh</button>
+      </div>
+      <div id="reports-admin-list" class="card-list"><div class="empty-box">Loading reports…</div></div>
     </section>
 
     <section id="reviews-section" class="hidden">
@@ -272,6 +299,9 @@ let refreshInProgress=false;
 let allBookings=[];
 let serviceById={};
 let storeNameById={};
+let lastStores=[],lastRequests=[];
+let bookingCounts={week:null,month:null};
+const VENDOR_URL="https://sisandashange.github.io/BOOK.NOW/vendor.html";
 
 const saToday=()=>new Intl.DateTimeFormat("en-CA",{timeZone:"Africa/Johannesburg"}).format(new Date());
 
@@ -377,6 +407,8 @@ async function boot(){
   $("refresh-vendors-btn").addEventListener("click",loadAdminData);
   $("refresh-orders-btn").addEventListener("click",loadOrders);
   $("refresh-reviews-btn").addEventListener("click",loadReviewsAdmin);
+  $("refresh-insights-btn").addEventListener("click",()=>{loadBookingCounts();loadStoresAndPayments().catch(()=>{});});
+  $("refresh-reports-btn").addEventListener("click",loadReportsAdmin);
   $("save-founder-bank-btn").addEventListener("click",saveFounderBank);
   $("founder-bank-select").addEventListener("change",()=>{
     const s=$("founder-bank-select").value;
@@ -580,7 +612,7 @@ async function signOut(){
 }
 
 function switchTab(tabId){
-  ["vendors-section","settings-section","orders-section","reviews-section"].forEach(id=>$(id).classList.toggle("hidden",id!==tabId));
+  ["vendors-section","settings-section","orders-section","reviews-section","insights-section","reports-section"].forEach(id=>$(id).classList.toggle("hidden",id!==tabId));
   document.querySelectorAll("[data-tab]").forEach(b=>b.classList.toggle("active",b.dataset.tab===tabId));
 }
 
@@ -591,7 +623,7 @@ async function loadAdminData(){
   $("global-message").textContent="Refreshing dashboard…";
   if(!window.__pushSynced){window.__pushSynced=true;syncPushSubscription();}
   try{
-    const results=await Promise.allSettled([loadStoresAndPayments(),loadOrders(),loadFounderBank(),loadReviewsAdmin()]);
+    const results=await Promise.allSettled([loadStoresAndPayments(),loadOrders(),loadFounderBank(),loadReviewsAdmin(),loadReportsAdmin(),loadBookingCounts()]);
     const failed=results.some(r=>r.status==="rejected");
     $("global-message").textContent=failed
       ?"Dashboard refreshed with errors. Review the affected section."
@@ -677,6 +709,8 @@ async function loadStoresAndPayments(){
   $("stat-pending").textContent=String(pending.length);
   updateBadge(pending.length);
   renderShops(storeRows,new Set(pending.map(r=>r.store_id)));
+  lastStores=storeRows;lastRequests=requests||[];
+  renderInsights();
   container.replaceChildren();
 
   if(!pending.length){showMessage(container,"No pending subscription payment requests.");return;}
@@ -738,6 +772,134 @@ async function loadStoresAndPayments(){
     card.append(top,actions);
     container.appendChild(card);
   });
+}
+
+// ---- Income, renewals and reports ----
+function waNumber(raw){
+  let d=String(raw||"").replace(/\D/g,"");
+  if(d.startsWith("0"))d="27"+d.slice(1);
+  return d.length>=11&&d.length<=15?d:"";
+}
+function saMonth(value){
+  const p=new Intl.DateTimeFormat("en-GB",{timeZone:"Africa/Johannesburg",year:"numeric",month:"2-digit"}).formatToParts(value instanceof Date?value:new Date(value));
+  const o=Object.fromEntries(p.filter(x=>x.type!=="literal").map(x=>[x.type,x.value]));
+  return o.year+"-"+o.month;
+}
+const daysLeft=store=>store.subscription_expires_at?Math.ceil((new Date(store.subscription_expires_at).getTime()-Date.now())/86400000):null;
+const isLiveStore=store=>String(store.status||"").toLowerCase()==="active"&&store.subscription_expires_at&&new Date(store.subscription_expires_at).getTime()>Date.now();
+
+async function loadBookingCounts(){
+  try{
+    const since=days=>new Date(Date.now()-days*86400000).toISOString();
+    const [w,m]=await Promise.all([
+      db.from("bookings").select("id",{count:"exact",head:true}).gte("created_at",since(7)),
+      db.from("bookings").select("id",{count:"exact",head:true}).gte("created_at",since(30))
+    ]);
+    bookingCounts={week:w.count??null,month:m.count??null};
+    renderInsights();
+  }catch(e){console.warn("Could not count bookings:",e);}
+}
+
+function renderInsights(){
+  const approved=lastRequests.filter(r=>String(r.status||"").toUpperCase()==="APPROVED");
+  const paid=approved.filter(r=>String(r.payment_type||"")!=="FREE_MONTH"&&Number(r.amount)>0);
+  const freeCount=approved.filter(r=>String(r.payment_type||"")==="FREE_MONTH").length;
+  const thisMonth=saMonth(new Date());
+  const sum=list=>list.reduce((t,r)=>t+Number(r.amount||0),0);
+  const incomeMonth=sum(paid.filter(r=>saMonth(r.created_at)===thisMonth));
+  const live=lastStores.filter(isLiveStore);
+  const due=live.filter(s=>daysLeft(s)<=3);
+  const lapsed=lastStores.filter(s=>s.subscription_expires_at&&!isLiveStore(s)&&new Date(s.subscription_expires_at).getTime()>Date.now()-14*86400000);
+  const num=v=>v===null?"…":String(v);
+  const tiles=[
+    ["Income this month",money(incomeMonth)],["Income all time",money(sum(paid))],
+    ["Live shops",String(live.length)],["Renewals due (3 days)",String(due.length)],
+    ["Lapsed (last 14 days)",String(lapsed.length)],["Free months given",String(freeCount)],
+    ["New bookings (7 days)",num(bookingCounts.week)],["New bookings (30 days)",num(bookingCounts.month)]
+  ];
+  $("insight-tiles").replaceChildren(...tiles.map(([label,value])=>{
+    const c=document.createElement("div");c.className="analytics-card";
+    addText(c,"div","analytics-label",label);addText(c,"div","analytics-value",value);return c;
+  }));
+
+  // Shops to remind: live and ending within 3 days, plus recently lapsed
+  const list=$("renewals-list");
+  const toRemind=[...due,...lapsed].sort((a,b)=>daysLeft(a)-daysLeft(b));
+  if(!toRemind.length){showMessage(list,"No shops need a renewal reminder right now.");}
+  else list.replaceChildren(...toRemind.map(store=>{
+    const d=daysLeft(store);
+    const card=document.createElement("article");card.className="vendor-card";
+    const top=document.createElement("div");top.className="vendor-top";
+    const det=document.createElement("div");det.style.minWidth="0";
+    addText(det,"div","vendor-title",(store.store_name||"Unnamed shop")+" — "+(store.category||"STORE"));
+    addText(det,"div","vendor-meta",d>0?`Ends in ${d} day${d===1?"":"s"} (${safeDate(store.subscription_expires_at)})`:`Ended ${Math.abs(d)} day${Math.abs(d)===1?"":"s"} ago (${safeDate(store.subscription_expires_at)})`);
+    addText(det,"div","vendor-meta","Contact: "+(store.phone_number||"No phone number"));
+    const badge=document.createElement("span");badge.className=badgeClass(d>0?"pending":"expired");badge.textContent=d>0?"ENDING SOON":"LAPSED";
+    top.append(det,badge);
+    const actions=document.createElement("div");actions.className="actions";
+    addText(actions,"span","small-note","Opens WhatsApp with the message ready to send.");
+    const btn=document.createElement("button");btn.type="button";btn.className="btn btn-success";btn.textContent="Remind on WhatsApp";
+    const num=waNumber(store.phone_number);
+    if(!num){btn.disabled=true;btn.textContent="No phone number";}
+    btn.addEventListener("click",()=>{
+      const text=`Hi ${store.store_name||""}, your BOOK.NOW subscription ${d>0?`ends in ${d} day${d===1?"":"s"} (${safeDate(store.subscription_expires_at)})`:"has ended"}. To keep taking bookings, renew for R299: open the Partner Portal ${VENDOR_URL}, log in and upload your proof of payment. Thank you!`;
+      window.open("https://wa.me/"+num+"?text="+encodeURIComponent(text),"_blank","noopener");
+    });
+    actions.appendChild(btn);card.append(top,actions);return card;
+  }));
+
+  // Income for the last 6 months
+  const months=[];
+  for(let i=5;i>=0;i--){const d=new Date();d.setUTCDate(15);d.setUTCMonth(d.getUTCMonth()-i);months.push(saMonth(d));}
+  const totals=months.map(m=>sum(paid.filter(r=>saMonth(r.created_at)===m)));
+  const max=Math.max(1,...totals);
+  const box=$("income-months");box.replaceChildren();
+  months.forEach((m,i)=>{
+    const row=document.createElement("div");row.className="bar-row";
+    const label=new Date(m+"-15T12:00:00Z").toLocaleDateString("en-ZA",{month:"short",year:"numeric",timeZone:"UTC"});
+    addText(row,"span","bar-label",label);
+    const track=document.createElement("div");track.className="bar-track";
+    const fill=document.createElement("div");fill.className="bar-fill";fill.style.width=Math.round(totals[i]/max*100)+"%";
+    track.appendChild(fill);row.appendChild(track);addText(row,"span","bar-val",money(totals[i]));box.appendChild(row);
+  });
+}
+
+const REPORT_LABELS={wrong_info:"Wrong information",unsafe:"Unsafe or treated badly",scam:"Looks like a scam",other:"Something else"};
+async function loadReportsAdmin(){
+  const container=$("reports-admin-list");
+  try{
+    const {data,error}=await db.from("shop_reports").select("id,store_id,reason,details,contact,status,created_at").order("created_at",{ascending:false}).limit(100);
+    if(error)throw error;
+    const rows=data||[];
+    const open=rows.filter(r=>r.status==="new").length;
+    const tab=document.querySelector('[data-tab="reports-section"]');
+    if(tab)tab.textContent=open?`Reports (${open})`:"Reports";
+    if(!rows.length){showMessage(container,"No reports. Customers can report a shop from its page.");return;}
+    container.replaceChildren(...rows.map(r=>{
+      const card=document.createElement("article");card.className="vendor-card";
+      const top=document.createElement("div");top.className="vendor-top";
+      const det=document.createElement("div");det.style.minWidth="0";
+      addText(det,"div","vendor-title",(storeNameById[r.store_id]||"Shop")+" — "+(REPORT_LABELS[r.reason]||r.reason));
+      addText(det,"div","vendor-meta",safeDate(r.created_at));
+      if(r.details)addText(det,"div","vendor-meta","\u201C"+r.details+"\u201D");
+      if(r.contact)addText(det,"div","vendor-meta","Reporter contact: "+r.contact);
+      const badge=document.createElement("span");badge.className=badgeClass(r.status==="new"?"pending":"completed");badge.textContent=r.status==="new"?"NEW":"HANDLED";
+      top.append(det,badge);
+      const actions=document.createElement("div");actions.className="actions";
+      addText(actions,"span","small-note","Check the shop's page and details before deciding.");
+      const btn=document.createElement("button");btn.type="button";btn.className=r.status==="new"?"btn btn-success":"btn";btn.textContent=r.status==="new"?"Mark handled":"Reopen";
+      btn.addEventListener("click",async()=>{
+        btn.disabled=true;
+        const {error:upErr}=await db.from("shop_reports").update({status:r.status==="new"?"handled":"new"}).eq("id",r.id);
+        if(upErr){alert("Could not update the report: "+upErr.message);btn.disabled=false;return;}
+        loadReportsAdmin();
+      });
+      actions.appendChild(btn);card.append(top,actions);return card;
+    }));
+  }catch(error){
+    showMessage(container,"Could not load reports: "+error.message,true);
+    throw error;
+  }
 }
 
 async function loadReviewsAdmin(){
