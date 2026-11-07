@@ -94,6 +94,13 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid 
 .analytics-label{font-size:11px;color:var(--muted);font-weight:600;line-height:1.5}
 .analytics-value{font-size:22px;font-weight:800;margin-top:8px;letter-spacing:-.6px}
 .filters{display:grid;grid-template-columns:minmax(0,1fr) minmax(145px,200px);gap:10px;margin-bottom:15px}
+@media(max-width:640px){
+  .account-label{display:none}
+  .top-nav{padding:12px 12px;gap:8px}
+  .brand{min-width:0;font-size:13px}
+  .nav-right{gap:8px;flex-shrink:0}
+  .nav-right .btn{padding:8px 10px;font-size:11px}
+}
 @media(max-width:760px){
   .container{padding:20px 14px}.top-nav{padding:13px 14px}
   .stats-container{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
@@ -659,6 +666,7 @@ function renderShops(storeRows,pendingIds=new Set()){
     const badge=document.createElement("span");
     badge.className=badgeClass(live?"active":(String(store.status||"").toLowerCase()==="active"?"expired":store.status));
     badge.textContent=live?"LIVE":(String(store.status||"").toLowerCase()==="active"?"EXPIRED":String(store.status||"pending").replaceAll("_"," ").toUpperCase());
+    if(store.is_hidden){badge.className=badgeClass("rejected");badge.textContent="HIDDEN";}
     top.append(details,badge);
     card.appendChild(top);
     if(!live&&!pendingIds.has(store.id)){
@@ -673,6 +681,16 @@ function renderShops(storeRows,pendingIds=new Set()){
       actions.appendChild(give);
       card.appendChild(actions);
     }
+    const vis=document.createElement("div");
+    vis.className="actions";
+    addText(vis,"span","small-note",store.is_hidden?("Hidden from customers"+(store.hidden_reason?": "+store.hidden_reason:"")+"."):"Customers can see this shop when it is live.");
+    const vb=document.createElement("button");
+    vb.type="button";
+    vb.className=store.is_hidden?"btn btn-success":"btn";
+    vb.textContent=store.is_hidden?"Show to customers":"Hide from customers";
+    vb.addEventListener("click",()=>setShopHidden(store,!store.is_hidden,"",vb));
+    vis.appendChild(vb);
+    card.appendChild(vis);
     return card;
   }));
 }
@@ -711,6 +729,7 @@ async function loadStoresAndPayments(){
   renderShops(storeRows,new Set(pending.map(r=>r.store_id)));
   lastStores=storeRows;lastRequests=requests||[];
   renderInsights();
+  loadReportsAdmin().catch(()=>{});
   container.replaceChildren();
 
   if(!pending.length){showMessage(container,"No pending subscription payment requests.");return;}
@@ -894,7 +913,22 @@ async function loadReportsAdmin(){
         if(upErr){alert("Could not update the report: "+upErr.message);btn.disabled=false;return;}
         loadReportsAdmin();
       });
-      actions.appendChild(btn);card.append(top,actions);return card;
+      const store=lastStores.find(s=>s.id===r.store_id);
+      const wa=waNumber(store&&store.phone_number);
+      const owner=document.createElement("button");
+      owner.type="button";owner.className="btn";owner.disabled=!wa;
+      owner.textContent=wa?"Message the owner":"No owner phone";
+      owner.addEventListener("click",()=>{
+        const text=`Hi ${store.store_name||""}, BOOK.NOW received a report about your listing (${REPORT_LABELS[r.reason]||"a concern"}). Please contact us on 075 297 8917 so we can sort it out. Thank you.`;
+        window.open("https://wa.me/"+wa+"?text="+encodeURIComponent(text),"_blank","noopener");
+      });
+      const isHidden=!!(store&&store.is_hidden);
+      const hide=document.createElement("button");
+      hide.type="button";hide.disabled=!store;
+      hide.className=isHidden?"btn btn-success":"btn btn-danger";
+      hide.textContent=isHidden?"Show shop":"Hide shop";
+      hide.addEventListener("click",()=>setShopHidden(store,!isHidden,REPORT_LABELS[r.reason]||"",hide));
+      actions.append(btn,owner,hide);card.append(top,actions);return card;
     }));
   }catch(error){
     showMessage(container,"Could not load reports: "+error.message,true);
@@ -943,6 +977,34 @@ async function loadReviewsAdmin(){
   }catch(error){
     showMessage(container,"Could not load reviews: "+error.message,true);
     throw error;
+  }
+}
+
+async function setShopHidden(store,hide,reasonHint,button){
+  if(!store)return;
+  if(!(await requireFounder()))return;
+  const name=store.store_name||"this shop";
+  let reason="";
+  if(hide){
+    const answer=prompt("Why are you hiding "+name+"? (optional, a short note for your records)",reasonHint||"");
+    if(answer===null)return;
+    reason=answer;
+    if(!confirm("Hide "+name+" from customers? It disappears from the homepage and can't take new bookings. Bookings it already has are not cancelled."))return;
+  }else if(!confirm("Show "+name+" to customers again?"))return;
+  const old=button.textContent;
+  button.disabled=true;
+  button.textContent="Please wait…";
+  try{
+    const {data,error}=await db.rpc("set_shop_hidden",{p_store_id:store.id,p_hidden:hide,p_reason:reason||null});
+    if(error)throw error;
+    if(data&&data.success===false)throw new Error(data.message||"Could not update the shop.");
+    alert(hide?name+" is now hidden from customers.":name+" is visible to customers again.");
+    await loadAdminData();
+  }catch(error){
+    alert("Could not update the shop: "+error.message);
+  }finally{
+    button.disabled=false;
+    button.textContent=old;
   }
 }
 
