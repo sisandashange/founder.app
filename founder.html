@@ -354,6 +354,28 @@ function safeDate(value){
   if(Number.isNaN(d.getTime()))return "Not provided";
   return d.toLocaleString("en-ZA",{timeZone:"Africa/Johannesburg",year:"numeric",month:"short",day:"2-digit",hour:"2-digit",minute:"2-digit"});
 }
+
+function appointmentDateLabel(booking){
+  // appointment_at is the actual appointment instant; booking_date can be the
+  // overnight business date, which may be one calendar day earlier.
+  if(booking.appointment_at){
+    const d=new Date(booking.appointment_at);
+    if(!Number.isNaN(d.getTime())){
+      const parts=new Intl.DateTimeFormat("en-CA",{
+        timeZone:"Africa/Johannesburg",
+        year:"numeric",month:"2-digit",day:"2-digit",
+        hour:"2-digit",minute:"2-digit",hourCycle:"h23"
+      }).formatToParts(d);
+      const values=Object.fromEntries(parts.filter(p=>p.type!=="literal").map(p=>[p.type,p.value]));
+      return values.year+"-"+values.month+"-"+values.day+" at "+values.hour+":"+values.minute;
+    }
+  }
+  // Backward-compatible fallback for older records without appointment_at.
+  if(booking.booking_date){
+    return booking.booking_date+(booking.booking_time?" at "+booking.booking_time:"");
+  }
+  return "Not provided";
+}
 function badgeClass(value){
   const safe=String(value||"pending").toLowerCase().replace(/[^a-z0-9_-]/g,"");
   return "status-badge status-"+safe;
@@ -1215,7 +1237,8 @@ function renderBookings(){
 
     addText(details,"div","order-title",(b.customer_name||"Customer")+" ("+(b.customer_phone||"N/A")+")");
     addText(details,"div","order-time","Booking created: "+safeDate(b.created_at));
-    if(b.booking_date)addText(details,"div","vendor-meta","Appointment: "+b.booking_date+(b.booking_time?" at "+b.booking_time+(Number(b.duration_minutes)>30?" ("+b.duration_minutes+" min)":""):""));
+    const appointmentLabel=appointmentDateLabel(b);
+    if(appointmentLabel!=="Not provided")addText(details,"div","vendor-meta","Appointment: "+appointmentLabel+(Number(b.duration_minutes)>30?" ("+b.duration_minutes+" min)":""));
     addText(details,"div","vendor-meta","Service: "+(service?.title||"Service details unavailable"));
     if(b.party_size>1)addText(details,"div","vendor-meta","Guests: "+b.party_size);
 
