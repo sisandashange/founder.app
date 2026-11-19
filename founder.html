@@ -974,7 +974,7 @@ function renderInsights(){
     const num=waNumber(store.phone_number);
     if(!num){btn.disabled=true;btn.textContent="No phone number";}
     btn.addEventListener("click",()=>{
-      const text=`Hi ${store.store_name||""}, your BOOK.NOW subscription ${d>0?`ends in ${d} day${d===1?"":"s"} (${safeDate(store.subscription_expires_at)})`:"has ended"}. To keep taking bookings, renew for R299: open the Partner Portal ${VENDOR_URL}, log in and upload your proof of payment. Thank you!`;
+      const text=`Hi ${store.store_name||""}, your BOOK.NOW subscription ${d>0?`ends in ${d} day${d===1?"":"s"} (${safeDate(store.subscription_expires_at)})`:"has ended"}. To keep taking bookings, renew for R149: open the Partner Portal ${VENDOR_URL}, log in and upload your proof of payment. Thank you!`;
       window.open("https://wa.me/"+num+"?text="+encodeURIComponent(text),"_blank","noopener");
     });
     actions.appendChild(btn);card.append(top,actions);return card;
