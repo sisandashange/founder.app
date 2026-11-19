@@ -303,6 +303,7 @@ const PROOF_BUCKET="subscription-proofs";
 const $=id=>document.getElementById(id);
 
 let refreshInProgress=false;
+let medianFounderLinked=false;
 let allBookings=[];
 let serviceById={};
 let storeNameById={};
@@ -412,6 +413,7 @@ async function requireFounder(){
   }
   if(await needsMfa()){await beginMfa();return false;}
   setDashboard(true);
+  if(pushChoice()==="on")await syncMedianFounderIdentity();
   return true;
 }
 
@@ -453,7 +455,14 @@ async function boot(){
     });
   });
 
-  db.auth.onAuthStateChange(event=>{if(event==="SIGNED_OUT"){setDashboard(false);updateBadge(0);}});
+  db.auth.onAuthStateChange(event=>{
+    if(event==="SIGNED_OUT"){
+      medianFounderLinked=false;
+      try{if(window.median?.onesignal?.logout)Promise.resolve(window.median.onesignal.logout()).catch(e=>console.warn("OneSignal logout:",e));}catch(e){}
+      setDashboard(false);
+      updateBadge(0);
+    }
+  });
 
   // Keep the app fresh: refresh when you come back to it, and every minute while it is open
   const dashboardOpen=()=>!document.hidden&&!$("admin-dashboard").classList.contains("hidden");
@@ -588,6 +597,7 @@ const PUSH_KEY="bn_founder_push";
 const pushChoice=()=>{try{return localStorage.getItem(PUSH_KEY);}catch(e){return null;}};
 const setPushChoice=v=>{try{localStorage.setItem(PUSH_KEY,v);}catch(e){} updatePushButton();};
 const pushSupported=()=>"serviceWorker" in navigator&&"PushManager" in window&&"Notification" in window;
+const medianFounderOneSignal=()=>window.median?.onesignal;
 const urlB64ToBytes=b64=>{
   const raw=atob((b64+"=".repeat((4-b64.length%4)%4)).replace(/-/g,"+").replace(/_/g,"/"));
   return Uint8Array.from(raw,c=>c.charCodeAt(0));
@@ -596,6 +606,33 @@ function updatePushButton(){
   const b=$("push-btn");
   if(!b)return;
   b.textContent=pushChoice()==="on"?"Phone alerts: On":"Turn on phone alerts";
+}
+async function syncMedianFounderIdentity(){
+  const os=medianFounderOneSignal();
+  if(pushChoice()!=="on"||!os||typeof os.login!=="function")return "off";
+  if(medianFounderLinked)return "on";
+  try{
+    await os.login(FOUNDER_ID);
+    medianFounderLinked=true;
+    if(typeof os.onesignalInfo==="function"){
+      const info=await os.onesignalInfo();
+      if(info?.requiresUserPrivacyConsent||!info?.subscription?.optedIn||!info?.subscription?.id){
+        medianFounderLinked=false;
+        setPushChoice("off");
+        if(typeof os.logout==="function")await os.logout();
+        $("global-message").textContent=info?.requiresUserPrivacyConsent
+          ?"Phone alerts need OneSignal privacy consent in the app settings."
+          :"OneSignal is not reporting an active push subscription. Check Android notification permission and the OneSignal app setup.";
+        return "error";
+      }
+    }
+    return "on";
+  }catch(e){
+    medianFounderLinked=false;
+    console.warn("Founder OneSignal identity could not be linked:",e);
+    $("global-message").textContent="Could not connect this phone to founder alerts. Please try again.";
+    return "error";
+  }
 }
 async function syncPushSubscription(){
   try{
@@ -622,7 +659,58 @@ async function removePushSubscription(){
     await sub.unsubscribe();
   }catch(e){}
 }
+async function enableMedianFounderAlerts(){
+  const os=medianFounderOneSignal();
+  if(!os||typeof os.login!=="function"||typeof os.onesignalInfo!=="function"){
+    throw new Error("The Median OneSignal plugin is not available in this APK. Rebuild the Founder app with OneSignal enabled.");
+  }
+  let info=await os.onesignalInfo();
+  if(info?.requiresUserPrivacyConsent){
+    throw new Error("OneSignal is waiting for privacy consent in the app settings.");
+  }
+  if((!info?.subscription?.optedIn||!info?.subscription?.id)&&typeof os.register==="function"){
+    await os.register();
+    for(let i=0;i<6;i++){
+      await new Promise(resolve=>setTimeout(resolve,500));
+      info=await os.onesignalInfo();
+      if(info?.subscription?.optedIn&&info?.subscription?.id)break;
+    }
+  }
+  if(!info?.subscription?.optedIn||!info?.subscription?.id){
+    throw new Error("OneSignal has no active Android push subscription. Check Android notification permission and the Firebase FCM credentials in OneSignal.");
+  }
+  await os.login(FOUNDER_ID);
+  medianFounderLinked=true;
+  setPushChoice("on");
+}
+async function disableMedianFounderAlerts(){
+  const os=medianFounderOneSignal();
+  try{if(os&&typeof os.logout==="function")await os.logout();}catch(e){console.warn("OneSignal logout:",e);}
+  medianFounderLinked=false;
+  setPushChoice("off");
+}
 async function togglePush(){
+  const os=medianFounderOneSignal();
+  if(os&&typeof os.onesignalInfo==="function"&&typeof os.login==="function"){
+    if(pushChoice()==="on"){
+      await disableMedianFounderAlerts();
+      $("global-message").textContent="Founder phone alerts are off.";
+      return;
+    }
+    const button=$("push-btn");
+    if(button)button.disabled=true;
+    try{
+      await enableMedianFounderAlerts();
+      $("global-message").textContent="Founder phone alerts are on. You'll be notified when a shop submits payment proof or a customer reports a shop.";
+    }catch(e){
+      setPushChoice("off");
+      medianFounderLinked=false;
+      $("global-message").textContent=e.message||"Founder phone alerts could not be enabled.";
+    }finally{
+      if(button)button.disabled=false;
+    }
+    return;
+  }
   if(pushChoice()==="on"){setPushChoice("off");await removePushSubscription();$("global-message").textContent="Phone alerts are off.";return;}
   if(!pushSupported()){alert("This phone can't receive alerts when the app is closed.");return;}
   try{if(Notification.permission==="default")await Notification.requestPermission();}catch(e){}
@@ -647,16 +735,19 @@ function switchTab(tabId){
 
 async function loadAdminData(){
   if(refreshInProgress)return;
-  if(!(await requireFounder()))return;
   refreshInProgress=true;
-  $("global-message").textContent="Refreshing dashboard…";
-  if(!window.__pushSynced){window.__pushSynced=true;syncPushSubscription();}
   try{
+    if(!(await requireFounder()))return;
+    $("global-message").textContent="Refreshing dashboard…";
+    if(!window.__pushSynced){window.__pushSynced=true;syncPushSubscription();}
     const results=await Promise.allSettled([loadStoresAndPayments(),loadOrders(),loadFounderBank(),loadReviewsAdmin(),loadReportsAdmin(),loadBookingCounts()]);
     const failed=results.some(r=>r.status==="rejected");
     $("global-message").textContent=failed
       ?"Dashboard refreshed with errors. Review the affected section."
       :"Dashboard refreshed successfully.";
+  }catch(error){
+    console.error("Founder dashboard refresh failed:",error);
+    $("global-message").textContent="Dashboard refresh failed. Please check your connection and try again.";
   }finally{
     refreshInProgress=false;
   }
@@ -1032,7 +1123,7 @@ async function setShopHidden(store,hide,reasonHint,button){
 
 async function giveFreeMonth(store,button){
   if(!(await requireFounder()))return;
-  if(!confirm("Give "+(store.store_name||"this shop")+" a free first month? The shop goes live for 30 days with no payment, and renews at R299/month after that."))return;
+  if(!confirm("Give "+(store.store_name||"this shop")+" a free first month? The shop goes live for 30 days with no payment. After that, the owner must submit the R149 monthly renewal payment for approval; nothing is charged automatically."))return;
   button.disabled=true;
   button.textContent="Switching on…";
   try{
