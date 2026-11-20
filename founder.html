@@ -307,6 +307,7 @@ let refreshInProgress=false;
 let medianFounderLinked=false;
 let allBookings=[];
 let bookingTotal=0;
+let bookingNextOffset=0;
 let bookingHasMore=false;
 let bookingLoadBusy=false;
 const BOOKING_PAGE_SIZE=500;
@@ -1269,7 +1270,7 @@ async function loadOrders(loadMore=false){
   $("stat-orders").textContent=bookingTotal?String(bookingTotal):"…";
 
   try{
-    const offset=loadMore?allBookings.length:0;
+    const offset=loadMore?bookingNextOffset:0;
     const {data:bookings,error,count}=await db.from("bookings").select("*",{count:"exact"})
       .order("created_at",{ascending:false}).order("id",{ascending:false})
       .range(offset,offset+BOOKING_PAGE_SIZE-1);
@@ -1280,7 +1281,8 @@ async function loadOrders(loadMore=false){
     const knownIds=new Set(loadMore?allBookings.map(b=>b.id):[]);
     const freshPage=page.filter(b=>!knownIds.has(b.id));
     allBookings=loadMore?allBookings.concat(freshPage):page;
-    bookingHasMore=allBookings.length<bookingTotal&&page.length===BOOKING_PAGE_SIZE;
+    bookingNextOffset=offset+page.length;
+    bookingHasMore=bookingNextOffset<bookingTotal&&page.length===BOOKING_PAGE_SIZE;
     $("stat-orders").textContent=String(bookingTotal);
 
     const ids=[...new Set(freshPage.map(b=>b.service_id).filter(Boolean))];
@@ -1296,7 +1298,7 @@ async function loadOrders(loadMore=false){
     renderBookings();
     button.style.display=bookingHasMore?"inline-flex":"none";
     button.disabled=false;
-    button.textContent=previousText;
+    button.textContent="Load older bookings";
   }catch(error){
     console.error("Founder booking load failed:",error);
     if(!allBookings.length){
