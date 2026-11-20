@@ -39,10 +39,13 @@ jobs:
               subprocess.run(["node", "--check", str(path)], check=True)
           required = [
               'id="load-more-bookings-btn"',
-              '.range(offset,offset+BOOKING_PAGE_SIZE-1)',
-              '.range(offset,offset+499)',
+              'query.or(`created_at.lt.${cursor.created_at},and(created_at.eq.${cursor.created_at},id.lt.${cursor.id})`)',
+              '.limit(BOOKING_PAGE_SIZE)',
+              'storeQuery.or(`created_at.lt.${cursor.created_at},and(created_at.eq.${cursor.created_at},id.lt.${cursor.id})`)',
+              'requestQuery.or(`created_at.lt.${cursor.created_at},and(created_at.eq.${cursor.created_at},id.lt.${cursor.id})`)',
               '.rpc("founder_list_subscription_payment_requests")',
               'bookingHasMore',
+              'refreshBookingCount()',
               'Load older bookings'
           ]
           missing = [item for item in required if item not in source]
