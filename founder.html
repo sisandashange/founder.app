@@ -747,7 +747,8 @@ async function loadAdminData(){
     $("global-message").textContent="Refreshing dashboard…";
     if(!window.__pushSynced){window.__pushSynced=true;syncPushSubscription();}
     const tasks=[loadStoresAndPayments(),loadFounderBank(),loadReviewsAdmin(),loadReportsAdmin(),loadBookingCounts()];
-    if(!allBookings.length)tasks.push(loadOrders(false));
+    if(!allBookings.length||allBookings.length<=BOOKING_PAGE_SIZE)tasks.push(loadOrders(false));
+    else tasks.push(refreshBookingCount());
     const results=await Promise.allSettled(tasks);
     const failed=results.some(r=>r.status==="rejected");
     $("global-message").textContent=failed
@@ -1276,6 +1277,14 @@ async function saveFounderBank(){
   }
 }
 
+async function refreshBookingCount(){
+  const {count,error}=await db.from("bookings").select("id",{count:"exact",head:true});
+  if(error)throw error;
+  bookingTotal=count??bookingTotal;
+  $("stat-orders").textContent=String(bookingTotal);
+  if(allBookings.length)renderBookings();
+}
+
 async function loadOrders(loadMore=false){
   if(bookingLoadBusy)return;
   if(loadMore&&(!bookingHasMore||!allBookings.length))return;
@@ -1365,7 +1374,7 @@ function renderBookings(){
     return !query||text.includes(query);
   });
 
-  $("booking-results-note").textContent="Showing "+filtered.length+" matching bookings from "+allBookings.length+" loaded of "+bookingTotal+" total. Load older bookings to search further. Analytics reflect loaded records.";
+  $("booking-results-note").textContent="Showing "+filtered.length+" matching bookings from "+allBookings.length+" loaded of "+bookingTotal+" total. Use Refresh for newest bookings or Load older to continue history. Analytics reflect loaded records.";
 
   container.replaceChildren();
   if(!filtered.length){
