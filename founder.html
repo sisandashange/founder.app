@@ -1273,7 +1273,6 @@ async function loadOrders(loadMore=false){
   if(loadMore&&(!bookingHasMore||!allBookings.length))return;
   bookingLoadBusy=true;
   const button=$("load-more-bookings-btn");
-  const previousText=button.textContent;
   if(loadMore){button.disabled=true;button.textContent="Loading older bookings…";}
   else if(!allBookings.length)showMessage($("orders-admin-list"),"Loading customer bookings…");
   $("stat-orders").textContent=bookingTotal?String(bookingTotal):"…";
