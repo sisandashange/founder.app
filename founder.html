@@ -288,6 +288,7 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid 
       </div>
       <div id="booking-results-note" class="small-note" style="margin-bottom:12px"></div>
       <div id="orders-admin-list" class="card-list"><div class="empty-box">Loading bookings…</div></div>
+      <button type="button" class="btn" id="load-more-bookings-btn" style="display:none;width:100%;margin-top:14px">Load older bookings</button>
     </section>
   </main>
 </div>
@@ -305,6 +306,10 @@ const $=id=>document.getElementById(id);
 let refreshInProgress=false;
 let medianFounderLinked=false;
 let allBookings=[];
+let bookingTotal=0;
+let bookingHasMore=false;
+let bookingLoadBusy=false;
+const BOOKING_PAGE_SIZE=500;
 let serviceById={};
 let storeNameById={};
 let lastStores=[],lastRequests=[];
@@ -436,7 +441,8 @@ async function boot(){
     catch(e){setMfaMessage("Press and hold the key to copy it.",true);}
   });
   $("refresh-vendors-btn").addEventListener("click",loadAdminData);
-  $("refresh-orders-btn").addEventListener("click",loadOrders);
+  $("refresh-orders-btn").addEventListener("click",()=>loadOrders(false));
+  $("load-more-bookings-btn").addEventListener("click",()=>loadOrders(true));
   $("refresh-reviews-btn").addEventListener("click",loadReviewsAdmin);
   $("refresh-insights-btn").addEventListener("click",()=>{loadBookingCounts();loadStoresAndPayments().catch(()=>{});});
   $("refresh-reports-btn").addEventListener("click",loadReportsAdmin);
@@ -740,7 +746,9 @@ async function loadAdminData(){
     if(!(await requireFounder()))return;
     $("global-message").textContent="Refreshing dashboard…";
     if(!window.__pushSynced){window.__pushSynced=true;syncPushSubscription();}
-    const results=await Promise.allSettled([loadStoresAndPayments(),loadOrders(),loadFounderBank(),loadReviewsAdmin(),loadReportsAdmin(),loadBookingCounts()]);
+    const tasks=[loadStoresAndPayments(),loadFounderBank(),loadReviewsAdmin(),loadReportsAdmin(),loadBookingCounts()];
+    if(!allBookings.length)tasks.push(loadOrders(false));
+    const results=await Promise.allSettled(tasks);
     const failed=results.some(r=>r.status==="rejected");
     $("global-message").textContent=failed
       ?"Dashboard refreshed with errors. Review the affected section."
@@ -813,15 +821,23 @@ async function loadStoresAndPayments(){
   showMessage(container,"Loading shops and payment requests…");
   showMessage($("shops-admin-list"),"Loading shops…");
 
-  const {data:stores,error:storeError}=await db.from("stores").select("*").order("created_at",{ascending:false});
-  if(storeError){
+  const storeRows=[];
+  try{
+    for(let offset=0;;offset+=500){
+      const {data:page,error:pageError}=await db.from("stores").select("*")
+        .order("created_at",{ascending:false}).order("id",{ascending:false})
+        .range(offset,offset+499);
+      if(pageError)throw pageError;
+      storeRows.push(...(page||[]));
+      if(!page||page.length<500)break;
+    }
+  }catch(storeError){
     ["stat-shops","stat-active","stat-pending"].forEach(id=>$(id).textContent="—");
     showMessage(container,"Could not load shops: "+storeError.message,true);
     showMessage($("shops-admin-list"),"Could not load shops.",true);
     throw storeError;
   }
 
-  const storeRows=stores||[];
   $("stat-shops").textContent=String(storeRows.length);
   storeNameById={};storeRows.forEach(s=>{storeNameById[s.id]=s.store_name||"Unnamed shop";});
   $("stat-active").textContent=String(storeRows.filter(s=>
@@ -1242,38 +1258,59 @@ async function saveFounderBank(){
   }
 }
 
-async function loadOrders(){
-  const container=$("orders-admin-list");
-  showMessage(container,"Loading customer bookings…");
-  $("stat-orders").textContent="…";
+async function loadOrders(loadMore=false){
+  if(bookingLoadBusy)return;
+  if(loadMore&&(!bookingHasMore||!allBookings.length))return;
+  bookingLoadBusy=true;
+  const button=$("load-more-bookings-btn");
+  const previousText=button.textContent;
+  if(loadMore){button.disabled=true;button.textContent="Loading older bookings…";}
+  else if(!allBookings.length)showMessage($("orders-admin-list"),"Loading customer bookings…");
+  $("stat-orders").textContent=bookingTotal?String(bookingTotal):"…";
 
   try{
-    const total=await db.from("bookings").select("id",{count:"exact",head:true});
-    if(total.error)throw total.error;
-
-    const {data:bookings,error}=await db.from("bookings").select("*").order("created_at",{ascending:false}).limit(500);
+    const offset=loadMore?allBookings.length:0;
+    const {data:bookings,error,count}=await db.from("bookings").select("*",{count:"exact"})
+      .order("created_at",{ascending:false}).order("id",{ascending:false})
+      .range(offset,offset+BOOKING_PAGE_SIZE-1);
     if(error)throw error;
 
-    allBookings=bookings||[];
-    $("stat-orders").textContent=String(total.count??allBookings.length);
+    const page=bookings||[];
+    bookingTotal=count??(loadMore?bookingTotal:page.length);
+    const knownIds=new Set(loadMore?allBookings.map(b=>b.id):[]);
+    const freshPage=page.filter(b=>!knownIds.has(b.id));
+    allBookings=loadMore?allBookings.concat(freshPage):page;
+    bookingHasMore=allBookings.length<bookingTotal&&page.length===BOOKING_PAGE_SIZE;
+    $("stat-orders").textContent=String(bookingTotal);
 
-    serviceById={};
-    const ids=[...new Set(allBookings.map(b=>b.service_id).filter(Boolean))];
+    const ids=[...new Set(freshPage.map(b=>b.service_id).filter(Boolean))];
     if(ids.length){
       const {data:services,error:serviceError}=await db.from("service_items")
         .select("id,title,price,sale_price,sale_start_date,sale_end_date").in("id",ids);
       if(serviceError)console.warn("Could not load service details:",serviceError.message);
       else (services||[]).forEach(s=>{serviceById[s.id]=s;});
     }
+    if(!loadMore)serviceById=Object.fromEntries(Object.entries(serviceById).filter(([id])=>ids.includes(id)));
 
     updateBookingAnalytics();
     renderBookings();
+    button.style.display=bookingHasMore?"inline-flex":"none";
+    button.disabled=false;
+    button.textContent=previousText;
   }catch(error){
     console.error("Founder booking load failed:",error);
-    $("stat-orders").textContent="Error";
-    ["analytics-total","analytics-pending","analytics-completed","analytics-paid"].forEach(id=>$(id).textContent="—");
-    showMessage(container,"Could not load customer bookings: "+(error.message||"Unknown error"),true);
-    throw error;
+    if(!allBookings.length){
+      $("stat-orders").textContent="Error";
+      ["analytics-total","analytics-pending","analytics-completed","analytics-paid"].forEach(id=>$(id).textContent="—");
+      showMessage($("orders-admin-list"),"Could not load customer bookings: "+(error.message||"Unknown error"),true);
+    }else{
+      button.style.display=bookingHasMore?"inline-flex":"none";
+      button.disabled=false;
+      button.textContent="Retry loading older bookings";
+      $("booking-results-note").textContent="Older bookings could not be loaded. Your previously loaded records are still available.";
+    }
+  }finally{
+    bookingLoadBusy=false;
   }
 }
 
@@ -1308,7 +1345,7 @@ function renderBookings(){
     return !query||text.includes(query);
   });
 
-  $("booking-results-note").textContent="Showing "+filtered.length+" of "+allBookings.length+" loaded bookings (latest 500). Analytics reflect the loaded records.";
+  $("booking-results-note").textContent="Showing "+filtered.length+" matching bookings from "+allBookings.length+" loaded of "+bookingTotal+" total. Load older bookings to search further. Analytics reflect loaded records.";
 
   container.replaceChildren();
   if(!filtered.length){
