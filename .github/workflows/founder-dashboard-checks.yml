@@ -41,6 +41,8 @@ jobs:
               'id="load-more-bookings-btn"',
               '.range(offset,offset+BOOKING_PAGE_SIZE-1)',
               '.range(offset,offset+499)',
+              '.range(offset,offset+499)',
+              'founder_list_subscription_payment_requests()',
               'bookingHasMore',
               'Load older bookings'
           ]
