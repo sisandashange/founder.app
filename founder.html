@@ -853,7 +853,8 @@ async function loadStoresAndPayments(){
   try{
     for(;;){
       const cursor=requestRows[requestRows.length-1]||null;
-      let requestQuery=db.rpc("founder_list_subscription_payment_requests");
+      let requestQuery=db.rpc("founder_list_subscription_payment_requests")
+        .order("created_at",{ascending:false}).order("id",{ascending:false});
       if(cursor){
         requestQuery=requestQuery.or(`created_at.lt.${cursor.created_at},and(created_at.eq.${cursor.created_at},id.lt.${cursor.id})`);
       }
