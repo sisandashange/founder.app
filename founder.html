@@ -271,7 +271,7 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid 
         <button class="btn btn-primary" id="refresh-orders-btn"><i class="ph ph-arrows-clockwise"></i> Refresh</button>
       </div>
       <div class="analytics-grid">
-        <div class="analytics-card"><div class="analytics-label">Total bookings</div><div class="analytics-value" id="analytics-total">—</div></div>
+        <div class="analytics-card"><div class="analytics-label">Loaded bookings</div><div class="analytics-value" id="analytics-total">—</div></div>
         <div class="analytics-card"><div class="analytics-label">Pending bookings</div><div class="analytics-value" id="analytics-pending">—</div></div>
         <div class="analytics-card"><div class="analytics-label">Completed bookings</div><div class="analytics-value" id="analytics-completed">—</div></div>
         <div class="analytics-card"><div class="analytics-label">Paid bookings</div><div class="analytics-value" id="analytics-paid">—</div></div>
@@ -846,14 +846,23 @@ async function loadStoresAndPayments(){
   ).length);
   renderShops(storeRows);
 
-  const {data:requests,error:requestError}=await db.rpc("founder_list_subscription_payment_requests");
-  if(requestError){
+  const requestRows=[];
+  try{
+    for(let offset=0;;offset+=500){
+      const {data:page,error:pageError}=await db.rpc("founder_list_subscription_payment_requests")
+        .range(offset,offset+499);
+      if(pageError)throw pageError;
+      requestRows.push(...(page||[]));
+      if(!page||page.length<500)break;
+    }
+  }catch(requestError){
     $("stat-pending").textContent="—";
     showMessage(container,"Could not load subscription requests: "+requestError.message,true);
     throw requestError;
   }
+  const requests=requestRows;
 
-  const pending=(requests||[]).filter(r=>String(r.status||"").toUpperCase()==="PENDING");
+  const pending=requests.filter(r=>String(r.status||"").toUpperCase()==="PENDING");
   $("stat-pending").textContent=String(pending.length);
   updateBadge(pending.length);
   renderShops(storeRows,new Set(pending.map(r=>r.store_id)));
