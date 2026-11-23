@@ -33,13 +33,9 @@ self.addEventListener("fetch", event => {
 
   const cacheKey = new Request(url.origin + url.pathname, { method: "GET" });
   event.respondWith((async () => {
+    let response;
     try {
-      const response = await fetch(req);
-      if (response.ok) {
-        const copy = response.clone();
-        event.waitUntil(caches.open(CACHE).then(cache => cache.put(cacheKey, copy)));
-      }
-      return response;
+      response = await fetch(req);
     } catch (_) {
       const cached = await caches.match(cacheKey);
       if (cached) return cached;
@@ -51,6 +47,17 @@ self.addEventListener("fetch", event => {
         status: 503, headers: { "Content-Type": "text/plain; charset=utf-8" }
       });
     }
+
+    // A cache-write failure must never turn a successful network response into an offline error.
+    if (response.ok) {
+      try {
+        const cache = await caches.open(CACHE);
+        await cache.put(cacheKey, response.clone());
+      } catch (cacheError) {
+        console.warn("BOOK.NOW Founder offline cache update failed:", cacheError);
+      }
+    }
+    return response;
   })());
 });
 
