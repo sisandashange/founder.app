@@ -32,11 +32,18 @@ jobs:
           source = pathlib.Path("founder.html").read_text(encoding="utf-8")
           worker = pathlib.Path("sw.js").read_text(encoding="utf-8")
           subprocess.run(["node", "--check", "sw.js"], check=True)
-          if "CORE_PATHS.has(url.pathname)" not in worker or "await cache.put(cacheKey, response.clone())" not in worker:
-              raise SystemExit("Founder service worker cache regression detected.")
-          if "event.waitUntil(caches.open(CACHE)" in worker:
-              raise SystemExit("Founder service worker must not attach cache writes after fetch dispatch.")
-          scripts = re.findall(r"<script\b[^>]*>(.*?)</script\s*>", source, flags=re.I | re.S)
+
+          fetch_handler = worker.split('self.addEventListener("fetch"', 1)[1].split("// ---- Phone alerts", 1)[0]
+          if "CORE_PATHS.has(url.pathname)" not in fetch_handler:
+              raise SystemExit("Founder service worker must cache only approved static paths.")
+          if 'const cacheKey = new Request(url.origin + url.pathname, { method: "GET" });' not in fetch_handler:
+              raise SystemExit("Founder service worker cache keys must exclude query strings.")
+          if "await cache.put(cacheKey, response.clone())" not in fetch_handler:
+              raise SystemExit("Founder service worker must await cache writes.")
+          if "event.waitUntil(" in fetch_handler:
+              raise SystemExit("Fetch handler must not call event.waitUntil after fetch dispatch.")
+
+          scripts = re.findall(r"<script[^>]*>(.*?)</script>", source, flags=re.I | re.S)
           if not scripts:
               raise SystemExit("No inline founder dashboard script found.")
           for index, script in enumerate(scripts):
@@ -56,5 +63,5 @@ jobs:
           missing = [item for item in required if item not in source]
           if missing:
               raise SystemExit("Founder pagination regression: missing " + ", ".join(missing))
-          print("Founder dashboard syntax and pagination checks passed.")
+          print("Founder dashboard syntax, service-worker caching, and pagination checks passed.")
           PY
