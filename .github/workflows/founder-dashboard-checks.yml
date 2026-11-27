@@ -59,7 +59,7 @@ jobs:
               '.rpc("founder_list_subscription_payment_requests")',
               'bookingHasMore',
               'Load older bookings'
-          'auth: {experimental:{passkey:true}}',
+          'experimental:{passkey:true}',
           'db.auth.signInWithPasskey()',
           'db.auth.registerPasskey()',
           'id="passkey-login-btn"',
