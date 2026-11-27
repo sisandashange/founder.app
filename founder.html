@@ -609,10 +609,12 @@ async function signInWithPasskey(){
       setDashboard(false);
       throw new Error("Access denied. This passkey is not linked to the authorised founder account.");
     }
-    // A passkey is a phishing-resistant sign-in credential. Password sign-in
-    // continues to require the existing TOTP MFA challenge as a fallback.
+    // Keep the existing database-enforced AAL2 requirement. A passkey is the
+    // first sign-in factor; the existing TOTP challenge remains mandatory.
     if(!(await requireFounder()))throw new Error("Founder account verification failed.");
+    if(await needsMfa()){await beginMfa();return;}
     setPasskeyMessage("Passkey verified. Opening your dashboard.");
+    setDashboard(true);
     await loadAdminData();
   }catch(error){
     setDashboard(false);
