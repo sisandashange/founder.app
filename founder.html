@@ -12,7 +12,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <script src="https://unpkg.com/@phosphor-icons/web@2.1.1" defer></script>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.105.0/dist/umd/supabase.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 
 <style>
 :root{--primary:#172033;--accent:#2563eb;--accent-light:#eff6ff;--bg:#f7f8fa;--text:#172033;--muted:#667085;--border:#e7eaf0;--success:#16834a;--success-bg:#ecfdf3;--warning:#a86405;--warning-bg:#fff8e6;--danger:#b42318;--danger-bg:#fff1f0;--radius:16px;--shadow:0 2px 8px rgba(16,24,40,.025)}
@@ -132,8 +132,6 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid 
       <div class="form-field"><label for="admin-password">Password</label><input type="password" id="admin-password" autocomplete="current-password" placeholder="Your password" required></div>
       <button type="submit" class="btn btn-primary" id="admin-login-btn" style="width:100%;padding:13px">Sign in to dashboard</button>
     </form>
-    <button type="button" class="btn" id="passkey-login-btn" style="width:100%;padding:13px;margin-top:10px">Sign in with fingerprint / face / PIN</button>
-    <div id="passkey-login-message" class="small-note" role="status" aria-live="polite" style="margin-top:9px"></div>
     <div id="login-message" class="small-note" role="status" aria-live="polite" style="margin-top:13px"></div>
   </div>
 </div>
@@ -186,12 +184,6 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid 
     </div>
 
     <div id="global-message" role="status" aria-live="polite">Loading dashboard…</div>
-    <div class="admin-card" style="margin-bottom:18px">
-      <div class="section-head" style="margin-bottom:8px"><div><h2 style="font-size:15px;margin:0">Secure sign-in on this device</h2><div class="section-description">Add a passkey so this phone can verify you with its supported fingerprint, face, or screen-lock PIN.</div></div></div>
-      <button type="button" class="btn btn-primary" id="passkey-register-btn">Enable fingerprint / face login</button>
-      <div id="passkey-register-message" class="small-note" role="status" aria-live="polite" style="margin-top:10px"></div>
-    </div>
-
     <div class="stats-container">
       <div class="stat-box"><div class="stat-top"><div class="stat-header">Registered shops</div><div class="stat-icon"><i class="ph ph-storefront"></i></div></div><div class="stat-value" id="stat-shops">—</div><div class="stat-caption">Shops registered on the platform</div></div>
       <div class="stat-box"><div class="stat-top"><div class="stat-header">Pending payment requests</div><div class="stat-icon"><i class="ph ph-receipt"></i></div></div><div class="stat-value" id="stat-pending">—</div><div class="stat-caption">Require founder review</div></div>
@@ -413,7 +405,7 @@ if(!window.supabase||typeof window.supabase.createClient!=="function"){
   showStartupError("The Supabase library did not load. Check your internet connection and refresh.");
   return;
 }
-const db=window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY,{auth:{experimental:{passkey:true}}});
+const db=window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY);
 
 async function requireFounder(){
   const {data,error}=await db.auth.getUser();
@@ -432,9 +424,6 @@ async function requireFounder(){
 
 async function boot(){
   $("admin-login-form").addEventListener("submit",e=>{e.preventDefault();signIn();});
-  $("passkey-login-btn").addEventListener("click",signInWithPasskey);
-  $("passkey-register-btn").addEventListener("click",registerFounderPasskey);
-  if(!passkeyAvailable()){$("passkey-login-btn").title="Open this dashboard in a supported secure browser to use passkeys."; }
   $("admin-logout-btn").addEventListener("click",signOut);
   $("push-btn").addEventListener("click",togglePush);
   updatePushButton();
@@ -583,75 +572,6 @@ async function verifyMfa(){
   }
 }
 
-function setPasskeyMessage(id,message,isError=false){
-  const el=$(id);
-  if(!el)return;
-  el.textContent=message||"";
-  el.style.color=isError?"#b42318":"var(--muted)";
-}
-function passkeyAvailable(){
-  return window.isSecureContext&&!!window.PublicKeyCredential&&!!navigator.credentials;
-}
-async function signInWithPasskey(){
-  const button=$("passkey-login-btn");
-  if(!passkeyAvailable()){
-    setPasskeyMessage("Passkeys need a supported secure browser. Open founder.app in the latest Chrome browser on Android.",true);
-    return;
-  }
-  button.disabled=true;
-  button.textContent="Waiting for your device…";
-  setPasskeyMessage("Approve the passkey prompt on your phone.");
-  try{
-    const {data,error}=await db.auth.signInWithPasskey();
-    if(error)throw error;
-    if(!data?.user||data.user.id!==FOUNDER_ID){
-      await db.auth.signOut();
-      setDashboard(false);
-      throw new Error("Access denied. This passkey is not linked to the authorised founder account.");
-    }
-    // Keep the existing database-enforced AAL2 requirement. A passkey is the
-    // first sign-in factor; the existing TOTP challenge remains mandatory.
-    if(!(await requireFounder()))throw new Error("Founder account verification failed.");
-    if(await needsMfa()){await beginMfa();return;}
-    setPasskeyMessage("Passkey verified. Opening your dashboard.");
-    setDashboard(true);
-    await loadAdminData();
-  }catch(error){
-    setDashboard(false);
-    setPasskeyMessage(error.message||"Passkey sign-in failed. Use your password and authenticator code instead.",true);
-  }finally{
-    button.disabled=false;
-    button.textContent="Sign in with fingerprint / face / PIN";
-  }
-}
-async function registerFounderPasskey(){
-  const button=$("passkey-register-btn");
-  const messageId="passkey-register-message";
-  if(!(await requireFounder()))return;
-  if(!passkeyAvailable()){
-    setPasskeyMessage(messageId,"This app view does not support passkeys. Open founder.app in the latest Chrome browser on Android.",true);
-    return;
-  }
-  try{
-    const {data:level,error:levelError}=await db.auth.mfa.getAuthenticatorAssuranceLevel();
-    if(levelError)throw levelError;
-    if(level.currentLevel!=="aal2"){
-      setPasskeyMessage(messageId,"For safety, sign in with your password and complete your authenticator code before registering a passkey.",true);
-      return;
-    }
-    button.disabled=true;
-    button.textContent="Setting up passkey…";
-    setPasskeyMessage(messageId,"Follow the phone prompt to save your BOOK.NOW Founder passkey.");
-    const {error}=await db.auth.registerPasskey();
-    if(error)throw error;
-    setPasskeyMessage(messageId,"Passkey registered. Next time, use the fingerprint / face / PIN sign-in button on this device.");
-  }catch(error){
-    setPasskeyMessage(messageId,error.message||"Could not register this passkey. Your normal password and authenticator login still works.",true);
-  }finally{
-    button.disabled=false;
-    button.textContent="Enable fingerprint / face login";
-  }
-}
 async function signIn(){
   const button=$("admin-login-btn");
   const email=$("admin-email").value.trim();
