@@ -1,6 +1,6 @@
 // BOOK.NOW Founder service worker: cache only the static dashboard shell.
 // Live Supabase data is never cached.
-const CACHE = "booknow-founder-v2";
+const CACHE = "booknow-founder-v3";
 const CORE_FILES = ["./", "./index.html", "./founder.html", "./manifest.webmanifest",
   "./icon-192.png", "./icon-512.png", "./icon-maskable-512.png"];
 const CORE_PATHS = new Set(CORE_FILES.map(path => new URL(path, self.registration.scope).pathname));
